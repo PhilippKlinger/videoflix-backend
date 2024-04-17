@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from .models import Video
+from .models import Video, VideoResolution
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -40,7 +40,13 @@ class LoginSerializer(serializers.Serializer):
         return user
 
 
+class VideoResolutionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VideoResolution
+        fields = "__all__"
+
 class VideoSerializer(serializers.ModelSerializer):
+    resolutions = VideoResolutionSerializer(many=True, read_only=True)
     class Meta:
         model = Video
         fields = "__all__"

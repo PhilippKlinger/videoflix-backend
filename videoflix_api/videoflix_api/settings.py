@@ -42,11 +42,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_rq",
+    'videoflix.apps.VideoflixConfig',
     'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
-    'videoflix',
-    
 ]
 
 MIDDLEWARE = [

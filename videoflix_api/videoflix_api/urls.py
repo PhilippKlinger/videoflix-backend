@@ -18,8 +18,13 @@ from django.contrib import admin
 from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
+from videoflix.views import VideoUploadView, VideoListView, RegisterUserView, LoginUserView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('register/', RegisterUserView.as_view(), name='register-user'),
+    path('login/', LoginUserView.as_view(), name='login-user'),
+    path('upload/', VideoUploadView.as_view(), name='video-upload'),
+    path('videos/', VideoListView.as_view(), name='video-list'),
     
 ] + static(settings.MEDIA_URL, document_root = settings.MEDIA_ROOT)

@@ -4,22 +4,23 @@ from django.core.files.storage import default_storage
 from .models import VideoResolution
 
 def convert_video(video_instance):
-    input_path = video_instance.video_file.path
+    input_file = video_instance.video_file
     resolutions = ['480p', '720p', '1080p']
+    
     for res in resolutions:
-        base, ext = os.path.splitext(video_instance.video_file.name)
-        output_filename = f"{base}_{res}{ext}"
-        output_path = os.path.join(default_storage.location, output_filename)
-        output_path = os.path.normpath(output_path)
+        base_name = input_file.name.rsplit('.', 1)[0]
+        extension = input_file.name.split('.')[-1]
+        output_filename = f"{base_name}_{res}.{extension}"
+        output_path = f"{output_filename}"
         
         command = [
             'ffmpeg',
-            '-i', input_path,
+            '-i', input_file.path,
             '-vf', f'scale=-2:{res.split("p")[0]}',             # Skalieren auf 480p
             '-c:v', 'libx264',                                  # Video-Codec: H.264
             '-preset', 'veryfast',                              # Schnelles Encoding
             '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
-            output_path
+            default_storage.path(output_path)
         ]
         try:
             subprocess.run(command, check=True)

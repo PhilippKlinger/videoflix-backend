@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from rest_framework.test import APIClient
 from .models import Video
+from django.core.cache import cache
 
 class BaseTest(TestCase):
     def setUp(self):
@@ -55,3 +56,11 @@ class VideoListTests(BaseTest):
     def test_videos_authenticated(self):
         response = self.client.get('/videos/')
         self.assertEqual(response.status_code, 200)
+        
+        
+class CacheTest(TestCase):
+    def test_redis_cache(self):
+        cache.set('test_key', 'test_value', timeout=30)
+        result = cache.get('test_key')
+        self.assertEqual(result, 'test_value', "Der Cache hat den Wert nicht korrekt zurückgegeben.")
+        cache.delete('test_key')

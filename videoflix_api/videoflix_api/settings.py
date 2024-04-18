@@ -32,6 +32,11 @@ CORS_ALLOWED_ORIGINS = [
     "https://philipp-klinger.developerakademie.net"
 ]
 
+INTERNAL_IPS = [
+    '127.0.0.1',
+]
+
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -42,15 +47,17 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_rq",
-    'videoflix.apps.VideoflixConfig',
-    'corsheaders',
-    'rest_framework',
-    'rest_framework.authtoken',
+    "videoflix.apps.VideoflixConfig",
+    "corsheaders",
+    "rest_framework",
+    "rest_framework.authtoken",
+    "debug_toolbar",
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "debug_toolbar.middleware.DebugToolbarMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

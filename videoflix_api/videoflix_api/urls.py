@@ -26,6 +26,7 @@ urlpatterns = [
     path('login/', LoginUserView.as_view(), name='login-user'),
     path('upload/', VideoUploadView.as_view(), name='video-upload'),
     path('videos/', VideoListView.as_view(), name='video-list'),
+    path('django-rq/', include('django_rq.urls'))
     
 ] + static(settings.MEDIA_URL, document_root = settings.MEDIA_ROOT)
 

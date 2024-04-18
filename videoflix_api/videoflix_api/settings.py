@@ -148,23 +148,19 @@ RQ_QUEUES = {
         "HOST": "localhost",
         "PORT": 6379,
         "DB": 0,
-        "USERNAME": "some-user",
-        "PASSWORD": "some-password",
+        "PASSWORD": "foobared",
         "DEFAULT_TIMEOUT": 360,
-        "REDIS_CLIENT_KWARGS": {  # Eventual additional Redis connection arguments
-            "ssl_cert_reqs": None,
-        },
     },
 }
 
-RQ_EXCEPTION_HANDLERS = ["path.to.my.handler"]  # If you need custom exception handlers
+RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379/1",
         "OPTIONS": {
-            "PASSWORD": 'foobared',
+            "PASSWORD": "foobared",
             "CLIENT_CLASS": "django_redis.client.DefaultClient"
         },
         "KEY_PREFIX": "videoflix_api",

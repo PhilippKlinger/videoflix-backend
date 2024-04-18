@@ -4,6 +4,7 @@ from django.dispatch import receiver
 from django.db.models.signals import post_save, post_delete, pre_delete
 from django.core.files.storage import default_storage
 from .tasks import convert_video
+import django_rq
 
 
 @receiver(post_save, sender=Video)
@@ -11,7 +12,9 @@ def video_post_save(sender, instance, created, **kwargs):
     print(f"Video {instance.title} saved")
     if created:
         print(f"Video {instance.title} uploaded")
-        convert_video(instance)
+        queue = django_rq.get_queue('default', autocommit=True)
+        queue.enqueue(convert_video, instance)
+        
 
 
 @receiver(pre_delete, sender=Video)

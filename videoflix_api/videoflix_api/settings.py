@@ -20,6 +20,7 @@ SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
@@ -52,7 +53,11 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "debug_toolbar",
+    'import_export',
+    'users',
 ]
+
+AUTH_USER_MODEL = 'users.CustomUser'
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -92,6 +97,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "videoflix_api.wsgi.application"
 
+IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = '/media/'
@@ -137,6 +143,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field

@@ -18,16 +18,24 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from videoflix.views import VideoUploadView, VideoListView, RegisterUserView, LoginUserView
+from videoflix.views import VideoUploadView, VideoListView 
+from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView
+from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('register/', RegisterUserView.as_view(), name='register-user'),
-    path('login/', LoginUserView.as_view(), name='login-user'),
     path('upload/', VideoUploadView.as_view(), name='video-upload'),
     path('videos/', VideoListView.as_view(), name='video-list'),
-    path('django-rq/', include('django_rq.urls'))
+    path('django-rq/', include('django_rq.urls')),
     
+    #------------------------------------------authentication---------------------------------------------------#
+    path('register/', RegisterUserView.as_view(), name='register-user'),
+    path('login/', LoginUserView.as_view(), name='login-user'),
+    path('activate/<str:activation_code>/', ActivateAccountView.as_view(), name='activate_account'),
+    path('request-new-activation-link/', RequestNewActivationLinkView.as_view(), name='request_new_activation_link'),
+    #------------------------------------------password reset---------------------------------------------------#
+    
+
 ] + static(settings.MEDIA_URL, document_root = settings.MEDIA_ROOT)
 
 # Debug auf True setzen in settings.py

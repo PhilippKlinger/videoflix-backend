@@ -78,8 +78,8 @@ REST_FRAMEWORK = {
 }
 
 AUTHENTICATION_BACKENDS = (
-        'django.contrib.auth.backends.RemoteUserBackend',
-        'django.contrib.auth.backends.ModelBackend',
+    'django.contrib.auth.backends.ModelBackend',
+    'users.backends.EmailBackend'
 )
 
 ROOT_URLCONF = "videoflix_api.urls"
@@ -179,3 +179,13 @@ CACHES = {
         "KEY_PREFIX": "videoflix_api",
     }
 }
+
+EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
+EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem System
+
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.deinemailserver.com'  # Ersetze dies mit der Adresse deines E-Mail-Servers
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'deine-email@example.com'  # Die E-Mail-Adresse, die du zum Senden verwendest
+# EMAIL_HOST_PASSWORD = 'deinpasswort'  # Das Passwort für die E-Mail-Adresse

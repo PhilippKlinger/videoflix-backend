@@ -10,12 +10,11 @@ class CustomUserAdmin(admin.ModelAdmin):
     model = CustomUser
     fieldsets = (
         (
-            'Individuelle Daten',
+            'Custom Data',
             {
                 'fields': (
                     'custom',
                     'phone',
-                    'address',
                 )
             }
         ),

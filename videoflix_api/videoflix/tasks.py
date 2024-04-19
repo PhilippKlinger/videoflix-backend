@@ -1,4 +1,3 @@
-import os
 import subprocess
 from django.core.files.storage import default_storage
 from .models import VideoResolution

@@ -53,8 +53,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
     "debug_toolbar",
-    'import_export',
-    'users',
+    "import_export",
+    "users",
 ]
 
 AUTH_USER_MODEL = 'users.CustomUser'
@@ -76,6 +76,11 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
 }
+
+AUTHENTICATION_BACKENDS = (
+        'django.contrib.auth.backends.RemoteUserBackend',
+        'django.contrib.auth.backends.ModelBackend',
+)
 
 ROOT_URLCONF = "videoflix_api.urls"
 

@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from .serializers import UserRegistrationSerializer, LoginSerializer
+from .serializers import PasswordResetRequestSerializer, PasswordResetSerializer, UserRegistrationSerializer, LoginSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
@@ -30,7 +30,6 @@ class RegisterUserView(views.APIView):
             )
             return Response({"detail": "Bitte überprüfen Sie Ihre E-Mail, um Ihr Konto zu aktivieren."}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class ActivateAccountView(views.APIView):
     permission_classes = [AllowAny]
@@ -88,3 +87,39 @@ class RequestNewActivationLinkView(views.APIView):
                 return Response({"detail": "There is still an active and valid activation link available."}, status=status.HTTP_400_BAD_REQUEST)
         except CustomUser.DoesNotExist:
             return Response({"detail": "There is no inactive account linked to this email."}, status=status.HTTP_404_NOT_FOUND)
+
+class PasswordResetRequestView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            user = CustomUser.objects.get(email=email)
+            user.generate_activation_code()
+            reset_url = request.build_absolute_uri(reverse('password_reset_confirm', args=[user.activation_code]))
+            send_mail(
+                'Passwort zurücksetzen',
+                f'Bitte benutzen Sie diesen Link, um Ihr Passwort zurückzusetzen: {reset_url}',
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+            return Response({"detail": "Ein Link zum Zurücksetzen des Passworts wurde an Ihre E-Mail-Adresse gesendet."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class PasswordResetConfirmView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, activation_code):
+        try:
+            user = CustomUser.objects.get(activation_code=activation_code, is_active=True)
+            serializer = PasswordResetSerializer(data=request.data)
+            if serializer.is_valid():
+                user.set_password(serializer.validated_data['new_password'])
+                user.activation_code = None  # Lösche den Code nach Gebrauch
+                user.save()
+                return Response({"detail": "The password reset was successfully."}, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except CustomUser.DoesNotExist:
+            return Response({"detail": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)

@@ -55,3 +55,26 @@ class LoginSerializer(serializers.Serializer):
 
         data['user'] = user
         return data
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        try:
+            user = CustomUser.objects.get(email=value)
+            if not user.is_active:
+                raise serializers.ValidationError("This account is not activated.")
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError("There is no user linked to this email.")
+        return value
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    new_password = serializers.CharField(required=True, write_only=True)
+    confirm_password = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError("The passwords doesn't match. Please enter again.")
+        validate_password(data['new_password'])
+        return data

@@ -18,17 +18,16 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from videoflix.views import VideoUploadView, VideoListView 
+from videoflix.views import VideoUploadView, VideoListView, VideoDetailView
 from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView, PasswordResetRequestView, PasswordResetConfirmView, DeleteAccountView, UserProfileView
-from rest_framework.routers import DefaultRouter
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('upload/', VideoUploadView.as_view(), name='video-upload'),
     path('videos/', VideoListView.as_view(), name='video-list'),
+    path('videos/<int:pk>/', VideoDetailView.as_view(), name='video-list-detail'),
     path('django-rq/', include('django_rq.urls')),
-    
     #------------------------------------------authentication---------------------------------------------------#
     path('register/', RegisterUserView.as_view(), name='register-user'),
     path('login/', LoginUserView.as_view(), name='login-user'),

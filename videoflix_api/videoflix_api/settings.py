@@ -189,3 +189,7 @@ EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem Sys
 # EMAIL_USE_TLS = True
 # EMAIL_HOST_USER = 'deine-email@example.com'  # Die E-Mail-Adresse, die du zum Senden verwendest
 # EMAIL_HOST_PASSWORD = 'deinpasswort'  # Das Passwort für die E-Mail-Adresse
+
+AVATARS = [
+    
+]

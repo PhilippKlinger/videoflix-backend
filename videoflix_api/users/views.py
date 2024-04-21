@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from .serializers import PasswordResetRequestSerializer, PasswordResetSerializer, UserRegistrationSerializer, LoginSerializer
+from .serializers import PasswordResetRequestSerializer, PasswordResetSerializer, UserRegistrationSerializer, LoginSerializer, ProfileSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
@@ -7,7 +7,7 @@ from rest_framework import views, status
 from django.core.mail import send_mail
 from django.urls import reverse
 from django.conf import settings
-from .models import CustomUser
+from .models import CustomUser, Profile
 from django.utils import timezone
 
 class RegisterUserView(views.APIView):
@@ -140,3 +140,34 @@ class DeleteAccountView(views.APIView):
             return Response({"detail": "Account ahs been deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class UserProfileView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        profiles = Profile.objects.filter(user=user)
+        serializer = ProfileSerializer(profiles, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = ProfileSerializer(data=request.data)
+        if serializer.is_valid():
+            if request.user.profiles.count() >= 4:
+                return Response({'error': 'Maximal vier Profile erlaubt'}, status=status.HTTP_400_BAD_REQUEST)
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def put(self, request, pk):
+        profile = Profile.objects.get(pk=pk, user=request.user)
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        profile = Profile.objects.get(pk=pk, user=request.user)
+        profile.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

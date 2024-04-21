@@ -19,7 +19,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from videoflix.views import VideoUploadView, VideoListView 
-from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView, PasswordResetRequestView, PasswordResetConfirmView
+from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView, PasswordResetRequestView, PasswordResetConfirmView, DeleteAccountView
 
 
 urlpatterns = [
@@ -33,6 +33,7 @@ urlpatterns = [
     path('login/', LoginUserView.as_view(), name='login-user'),
     path('activate/<str:activation_code>/', ActivateAccountView.as_view(), name='activate_account'),
     path('request-new-activation-link/', RequestNewActivationLinkView.as_view(), name='request_new_activation_link'),
+    path('delete-account/', DeleteAccountView.as_view(), name='delete-account'),
     #------------------------------------------password reset---------------------------------------------------#
     path('password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('password-reset-confirm/<str:activation_code>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),

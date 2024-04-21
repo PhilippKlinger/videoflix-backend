@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import CustomUser
+from .models import CustomUser,Profile
 from django.core.exceptions import ValidationError
 
 
@@ -23,7 +23,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        validated_data.pop('password_confirm', None)  # Remove the password_confirm field
+        validated_data.pop('password_confirm', None)
         user = CustomUser.objects.create_user(
             email=validated_data['email'],
             username=validated_data['username'],
@@ -42,14 +42,12 @@ class LoginSerializer(serializers.Serializer):
         password = data.get("password")
 
         if email and password:
-            # Benutzer über die E-Mail-Adresse authentifizieren
             user = authenticate(request=self.context.get('request'), username=email, password=password)
             if not user:
                 raise serializers.ValidationError("Unable to log in with provided credentials.")
         else:
             raise serializers.ValidationError("Must include 'email' and 'password'.")
 
-        # Überprüfen, ob der Benutzer aktiv ist
         if not user.is_active:
             raise serializers.ValidationError("This account is inactive. Please activate Account first.")
 
@@ -68,7 +66,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError("There is no user linked to this email.")
         return value
 
-
 class PasswordResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(required=True, write_only=True)
     confirm_password = serializers.CharField(required=True, write_only=True)
@@ -78,3 +75,17 @@ class PasswordResetSerializer(serializers.Serializer):
             raise serializers.ValidationError("The passwords doesn't match. Please enter again.")
         validate_password(data['new_password'])
         return data
+
+class ProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Profile
+        fields = '__all__'
+
+    def create(self, validated_data):
+        user = validated_data.get('user')
+        if Profile.objects.filter(user=user).count() >= 4:
+            raise serializers.ValidationError("A user can't have more than four profiles.")
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        return super().update(instance, validated_data)

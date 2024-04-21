@@ -123,3 +123,20 @@ class PasswordResetConfirmView(views.APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except CustomUser.DoesNotExist:
             return Response({"detail": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)
+
+class DeleteAccountView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, *args, **kwargs):
+        user = request.user
+
+        # Optionale Sicherheitsüberprüfung: Bestätigung durch den Benutzer
+        confirm = request.data.get('confirm', False)
+        if not confirm:
+            return Response({"detail": "Please confirm the cancellation of the account."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user.delete()
+            return Response({"detail": "Account ahs been deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

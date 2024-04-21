@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -42,3 +42,20 @@ class VideoListView(views.APIView):
         
         return Response(serialized_data)
 
+class VideoDetailView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        video = get_object_or_404(Video, pk=pk)
+        serializer = VideoSerializer(video)
+        return Response(serializer.data)
+
+    def patch(self, request, pk):
+        video = get_object_or_404(Video, pk=pk)
+        serializer = VideoSerializer(video, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            # Hier kannst du den Cache aktualisieren oder invalidieren
+            cache.delete('all_videos')
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

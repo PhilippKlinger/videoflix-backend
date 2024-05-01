@@ -9,9 +9,11 @@ from django.urls import reverse
 from django.conf import settings
 from .models import CustomUser, Profile
 from django.utils import timezone
+from django.http import HttpResponseRedirect
 
 class RegisterUserView(views.APIView):
     permission_classes = [AllowAny]
+    
 
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
@@ -44,7 +46,8 @@ class ActivateAccountView(views.APIView):
             user.activation_code = None  # Lösche den Aktivierungscode
             user.activation_code_expiry = None  # Setze das Ablaufdatum zurück
             user.save()
-            return Response({"detail": "Ihr Konto wurde erfolgreich aktiviert."}, status=status.HTTP_200_OK)
+            return HttpResponseRedirect(f'{settings.FRONTEND_URL}login')
+            #return Response({"detail": "Ihr Konto wurde erfolgreich aktiviert."}, status=status.HTTP_200_OK)
         except CustomUser.DoesNotExist:
             return Response({"detail": "Ungültiger Aktivierungscode. Bitte fordern Sie einen neuen an."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -153,8 +156,8 @@ class UserProfileView(views.APIView):
     def post(self, request):
         serializer = ProfileSerializer(data=request.data)
         if serializer.is_valid():
-            if request.user.profiles.count() >= 4:
-                return Response({'error': 'Maximal vier Profile erlaubt'}, status=status.HTTP_400_BAD_REQUEST)
+            if request.user.profiles.count() >= 5:
+                return Response({'error': 'Maximum of 5 profiles reached'}, status=status.HTTP_400_BAD_REQUEST)
             serializer.save(user=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

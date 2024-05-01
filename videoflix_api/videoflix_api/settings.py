@@ -28,10 +28,12 @@ ALLOWED_HOSTS = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5500",
-    "http://127.0.0.1:5500",
+    "http://localhost:4200",
+    "http://127.0.0.1:4200",
     "https://philipp-klinger.developerakademie.net"
 ]
+
+FRONTEND_URL = 'http://localhost:4200/'
 
 INTERNAL_IPS = [
     '127.0.0.1',
@@ -104,8 +106,13 @@ WSGI_APPLICATION = "videoflix_api.wsgi.application"
 
 IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-MEDIA_URL = '/media/'
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.0/howto/static-files/
+
+# STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+STATICFILES_DIRS = [BASE_DIR / "static",]
+STATIC_URL = '/static/'
+
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
@@ -143,13 +150,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.0/howto/static-files/
-
-STATIC_URL = "static/"
-
-STATIC_ROOT = os.path.join(BASE_DIR, 'static/staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
@@ -189,7 +189,3 @@ EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem Sys
 # EMAIL_USE_TLS = True
 # EMAIL_HOST_USER = 'deine-email@example.com'  # Die E-Mail-Adresse, die du zum Senden verwendest
 # EMAIL_HOST_PASSWORD = 'deinpasswort'  # Das Passwort für die E-Mail-Adresse
-
-AVATARS = [
-    
-]

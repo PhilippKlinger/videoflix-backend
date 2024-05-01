@@ -83,8 +83,8 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         user = validated_data.get('user')
-        if Profile.objects.filter(user=user).count() >= 4:
-            raise serializers.ValidationError("A user can't have more than four profiles.")
+        if Profile.objects.filter(user=user).count() >= 5:
+            raise serializers.ValidationError("A user can't have more than five profiles.")
         return super().create(validated_data)
 
     def update(self, instance, validated_data):

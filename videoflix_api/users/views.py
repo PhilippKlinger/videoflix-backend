@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from .serializers import PasswordResetRequestSerializer, PasswordResetSerializer, UserRegistrationSerializer, LoginSerializer, ProfileSerializer
+from .serializers import PasswordResetRequestSerializer, PasswordResetSerializer, UserRegistrationEmailSerializer, UserRegistrationSerializer, LoginSerializer, ProfileSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
@@ -11,10 +11,21 @@ from .models import CustomUser, Profile
 from django.utils import timezone
 from django.http import HttpResponseRedirect
 
+
+class RegisterUserEmailView(views.APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        serializer = UserRegistrationEmailSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            user = CustomUser.objects.get(email=email)
+            return Response({"email": user.email}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class RegisterUserView(views.APIView):
     permission_classes = [AllowAny]
     
-
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():

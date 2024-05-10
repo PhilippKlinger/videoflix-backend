@@ -6,6 +6,20 @@ from .models import CustomUser,Profile
 from django.core.exceptions import ValidationError
 
 
+class UserRegistrationEmailSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=True)
+    
+    class Meta:
+        model = CustomUser
+        fields = ["email"]
+
+    def validate_email(self, value):
+        try:
+            user = CustomUser.objects.get(email=value)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError("Email not found in databse.")
+        return value
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password_confirm = serializers.CharField(style={'input_type': 'password'}, write_only=True)
 

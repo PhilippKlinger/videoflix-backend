@@ -18,7 +18,7 @@ class CustomUser(AbstractUser):
         self.save()
         
     def save(self, *args, **kwargs):
-        if self.pk and self.profiles.count() >= 4:
+        if self.pk and self.profiles.count() >= 5:
             raise ValidationError("Ein Benutzer darf nicht mehr als vier Profile haben.")
         super().save(*args, **kwargs)
     

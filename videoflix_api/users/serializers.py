@@ -14,10 +14,7 @@ class UserRegistrationEmailSerializer(serializers.ModelSerializer):
         fields = ["email"]
 
     def validate_email(self, value):
-        try:
-            user = CustomUser.objects.get(email=value)
-        except CustomUser.DoesNotExist:
-            raise serializers.ValidationError("Email not found in databse.")
+       
         return value
 
 class UserRegistrationSerializer(serializers.ModelSerializer):

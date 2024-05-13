@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from .serializers import PasswordResetRequestSerializer, PasswordResetSerializer, UserRegistrationEmailSerializer, UserRegistrationSerializer, LoginSerializer, ProfileSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
@@ -19,8 +19,8 @@ class RegisterUserEmailView(views.APIView):
         serializer = UserRegistrationEmailSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            user = CustomUser.objects.get(email=email)
-            return Response({"email": user.email}, status=status.HTTP_200_OK)
+            user_exists = CustomUser.objects.filter(email=email).exists()
+            return Response({"email": email, "user_exists": user_exists}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class RegisterUserView(views.APIView):
@@ -50,17 +50,15 @@ class ActivateAccountView(views.APIView):
     def get(self, request, activation_code):
         try:
             user = CustomUser.objects.get(activation_code=activation_code, is_active=False)
-            # Überprüfe, ob der Aktivierungscode noch gültig ist
             if timezone.now() > user.activation_code_expiry:
-                return Response({"detail": "Der Aktivierungscode ist abgelaufen. Bitte fordern Sie einen neuen an."}, status=status.HTTP_400_BAD_REQUEST)
+                return redirect(f'{settings.FRONTEND_URL}login?status=expired')
             user.is_active = True
-            user.activation_code = None  # Lösche den Aktivierungscode
-            user.activation_code_expiry = None  # Setze das Ablaufdatum zurück
+            user.activation_code = None
+            user.activation_code_expiry = None
             user.save()
-            return HttpResponseRedirect(f'{settings.FRONTEND_URL}login')
-            #return Response({"detail": "Ihr Konto wurde erfolgreich aktiviert."}, status=status.HTTP_200_OK)
+            return redirect(f'{settings.FRONTEND_URL}login?status=activated')
         except CustomUser.DoesNotExist:
-            return Response({"detail": "Ungültiger Aktivierungscode. Bitte fordern Sie einen neuen an."}, status=status.HTTP_400_BAD_REQUEST)
+            return redirect(f'{settings.FRONTEND_URL}login?status=invalid')
 
 class LoginUserView(views.APIView):
     permission_classes = [AllowAny]
@@ -111,7 +109,7 @@ class PasswordResetRequestView(views.APIView):
             email = serializer.validated_data['email']
             user = CustomUser.objects.get(email=email)
             user.generate_activation_code()
-            reset_url = request.build_absolute_uri(reverse('password_reset_confirm', args=[user.activation_code]))
+            reset_url = request.build_absolute_uri(reverse('verify_reset_code', args=[user.activation_code]))
             send_mail(
                 'Passwort zurücksetzen',
                 f'Bitte benutzen Sie diesen Link, um Ihr Passwort zurückzusetzen: {reset_url}',
@@ -122,6 +120,18 @@ class PasswordResetRequestView(views.APIView):
             return Response({"detail": "Ein Link zum Zurücksetzen des Passworts wurde an Ihre E-Mail-Adresse gesendet."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class VerifyResetCodeView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, activation_code):
+        try:
+            user = CustomUser.objects.get(activation_code=activation_code, is_active=True)
+            if timezone.now() > user.activation_code_expiry:
+                return redirect(f'{settings.FRONTEND_URL}login?status=expired-reset')
+            return redirect(f'{settings.FRONTEND_URL}login?status=password-reset&code={activation_code}')
+        except CustomUser.DoesNotExist:
+            return redirect(f'{settings.FRONTEND_URL}login?status=invalid-reset')
+
 class PasswordResetConfirmView(views.APIView):
     permission_classes = [AllowAny]
 
@@ -131,7 +141,8 @@ class PasswordResetConfirmView(views.APIView):
             serializer = PasswordResetSerializer(data=request.data)
             if serializer.is_valid():
                 user.set_password(serializer.validated_data['new_password'])
-                user.activation_code = None  # Lösche den Code nach Gebrauch
+                user.activation_code = None
+                user.activation_code_expiry = None
                 user.save()
                 return Response({"detail": "The password reset was successfully."}, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

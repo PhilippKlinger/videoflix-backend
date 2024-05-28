@@ -44,7 +44,7 @@ urlpatterns = [
     path('password-reset-confirm/<str:activation_code>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 
 
-] + static(settings.STATIC_URL, document_root=settings.STATICFILES_DIRS)
+] + static(settings.MEDIA_URL, document_root = settings.MEDIA_ROOT)
 
 
 # Debug auf True setzen in settings.py

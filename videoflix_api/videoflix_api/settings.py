@@ -113,6 +113,9 @@ IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 STATICFILES_DIRS = [BASE_DIR / "static",]
 STATIC_URL = '/static/'
 
+# Media files
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = '/media/'
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases

@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Video
+from .models import Video, Profile
 from .serializers import VideoSerializer
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -54,10 +54,21 @@ class VideoDetailView(views.APIView):
 
     def patch(self, request, pk):
         video = get_object_or_404(Video, pk=pk)
+        favorited_by_ids = request.data.get('favorited_by')
+        
+        if favorited_by_ids is not None:
+            profiles = Profile.objects.filter(id__in=favorited_by_ids)
+            video.favorited_by.set(profiles)
+            video.save()
+            serializer = VideoSerializer(video)
+            cache.delete('all_videos')  # Cache löschen
+            cache.set('all_videos', VideoSerializer(Video.objects.all(), many=True).data, timeout=300)  # Cache aktualisieren
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
         serializer = VideoSerializer(video, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            # Hier kannst du den Cache aktualisieren oder invalidieren
-            cache.delete('all_videos')
+            cache.delete('all_videos')  # Cache löschen
+            cache.set('all_videos', VideoSerializer(Video.objects.all(), many=True).data, timeout=300)  # Cache aktualisieren
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

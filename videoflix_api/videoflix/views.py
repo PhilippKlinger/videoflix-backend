@@ -5,9 +5,11 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Video
 from .serializers import VideoSerializer
 from django.core.cache import cache
+from rest_framework.parsers import MultiPartParser, FormParser
 
 class VideoUploadView(views.APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request):
         cache_key = 'all_videos'

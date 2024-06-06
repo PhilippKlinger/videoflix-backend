@@ -1,5 +1,6 @@
 from datetime import date
 from django.db import models
+from users.models import Profile
 
 class Video(models.Model):
     uploaded_at = models.DateField(default=date.today)
@@ -7,7 +8,8 @@ class Video(models.Model):
     description = models.CharField(max_length=500)
     video_file = models.FileField(upload_to='videos', blank=True, null=True)
     thumbnail = models.ImageField(upload_to='thumbnails/', blank=True, null=True)
-    
+    favorited_by = models.ManyToManyField(Profile, related_name='favorite_videos', blank=True)
+
     def __str__(self):
         return self.title
     

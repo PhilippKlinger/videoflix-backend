@@ -1,7 +1,7 @@
 
 from .models import Video
 from django.dispatch import receiver
-from django.db.models.signals import post_save, post_delete, pre_delete
+from django.db.models.signals import post_save, pre_delete
 from django.core.files.storage import default_storage
 from .tasks import convert_video, create_thumbnail
 import django_rq
@@ -32,3 +32,7 @@ def video_pre_delete(sender, instance, **kwargs):
         if res.converted_file and default_storage.exists(res.converted_file.name):
             default_storage.delete(res.converted_file.name)
             print(f"Converted video file {res.converted_file.name} deleted from storage.")
+            
+    if instance.thumbnail and default_storage.exists(instance.thumbnail.name):
+        default_storage.delete(instance.thumbnail.name)
+        print(f"Thumbnail {instance.thumbnail.name} deleted from storage.")

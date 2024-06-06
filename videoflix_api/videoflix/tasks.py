@@ -34,7 +34,7 @@ def create_thumbnail(video_instance):
     ]
 
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True) #shell=True
         with open(output_path, 'rb') as f:
             video_instance.thumbnail.save(output_filename, ContentFile(f.read()), save=True)
         print(f"Thumbnail created and saved to {output_filename}")
@@ -52,20 +52,20 @@ def convert_video(video_instance):
         base_name = input_file.name.rsplit('.', 1)[0]
         extension = input_file.name.split('.')[-1]
         output_filename = f"{base_name}_{res}.{extension}"
-        output_path = f"{output_filename}"
+        output_path = default_storage.path(output_filename)
         
         command = [
             'ffmpeg',
-            '-i', input_file.path,
+            '-i', default_storage.path(input_file.name),
             '-vf', f'scale=-2:{res.split("p")[0]}',             # Skalieren auf 480p bpsw.
             '-c:v', 'libx264',                                  # Video-Codec: H.264
             '-preset', 'veryfast',                              # Schnelles Encoding
             '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
-            default_storage.path(output_path)
+            output_path
         ]
         try:
-            subprocess.run(command, check=True)
-            VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_path)
+            subprocess.run(command, check=True) #shell=True
+            VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
             print(f"Video converted and saved to {output_path}")
         
         except subprocess.CalledProcessError as e:

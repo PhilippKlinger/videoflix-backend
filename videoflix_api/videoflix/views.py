@@ -7,6 +7,17 @@ from .serializers import VideoSerializer
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
 
+# testweise clearing cache
+
+class VideoClearCache(views.APIView):
+    permission_classes = [IsAuthenticated]
+    
+    
+    def post(self, request):
+        cache_key = 'all_videos'
+        cache.delete(cache_key)
+        return Response({'status': 'Cache cleared'}, status=status.HTTP_200_OK)
+
 class VideoUploadView(views.APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)

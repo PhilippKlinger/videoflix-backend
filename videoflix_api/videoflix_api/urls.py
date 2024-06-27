@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from videoflix.views import VideoUploadView, VideoListView, VideoDetailView
+from videoflix.views import VideoUploadView, VideoListView, VideoDetailView, VideoClearCache
 from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView, PasswordResetRequestView, PasswordResetConfirmView, DeleteAccountView, UserProfileView,  RegisterUserEmailView, VerifyResetCodeView
 
 
@@ -28,6 +28,7 @@ urlpatterns = [
     path('videos/', VideoListView.as_view(), name='video-list'),
     path('videos/<int:pk>/', VideoDetailView.as_view(), name='video-list-detail'),
     path('django-rq/', include('django_rq.urls')),
+    path('clear-cache/', VideoClearCache.as_view(), name='video-clear-cache' ),
     #------------------------------------------authentication---------------------------------------------------#
     path('register-email/',  RegisterUserEmailView.as_view(), name='register-user-email'),
     path('register/', RegisterUserView.as_view(), name='register-user'),

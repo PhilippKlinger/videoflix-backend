@@ -189,10 +189,10 @@ CACHES = {
 #EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
 #EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem System
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'w01eb40f.kasserver.com'  # Ersetze dies mit der Adresse deines E-Mail-Servers
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'videoflix@philipp-klinger.com'  # Die E-Mail-Adresse, die du zum Senden verwendest
-EMAIL_HOST_PASSWORD = 'YrAZCV9wU5G9wE3juKmD'  # Das Passwort für die E-Mail-Adresse
-DEFAULT_FROM_EMAIL = 'videoflix@philipp-klinger.com'
+EMAIL_BACKEND = env('EMAIL_BACKEND')
+EMAIL_HOST = env('EMAIL_HOST')
+EMAIL_PORT = env.int('EMAIL_PORT')
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS')
+EMAIL_HOST_USER = env('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')

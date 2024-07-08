@@ -20,6 +20,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from videoflix.views import VideoUploadView, VideoListView, VideoDetailView, VideoClearCache
 from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView, PasswordResetRequestView, PasswordResetConfirmView, DeleteAccountView, UserProfileView,  RegisterUserEmailView, VerifyResetCodeView
+#from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 
 urlpatterns = [
@@ -45,8 +46,11 @@ urlpatterns = [
     path('password-reset-confirm/<str:activation_code>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 
 
-] + static(settings.MEDIA_URL, document_root = settings.MEDIA_ROOT)
+]
+# + staticfiles_urlpatterns()
 
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
 # Debug auf True setzen in settings.py
 if settings.DEBUG:

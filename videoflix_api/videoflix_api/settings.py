@@ -18,25 +18,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "philipp-klinger.developerakademie.net"
+    "philipp-klinger.developerakademie.net",
+    "35.242.217.63",
+    "backend-videoflix.philipp-klinger.com"
 ]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
-    "https://philipp-klinger.developerakademie.net"
+    "https://philipp-klinger.developerakademie.net",
+    "https://videoflix.philipp-klinger.com"
 ]
 
 FRONTEND_URL = 'http://localhost:4200/'
 
 INTERNAL_IPS = [
-    '127.0.0.1',
+    '127.0.0.1'
 ]
 
 
@@ -109,9 +112,9 @@ IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
-# STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-STATICFILES_DIRS = [BASE_DIR / "static",]
+
 STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
 # Media files
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
@@ -174,7 +177,7 @@ RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": "redis://10.156.0.2:6379/1",
         "OPTIONS": {
             "PASSWORD": "foobared",
             "CLIENT_CLASS": "django_redis.client.DefaultClient"
@@ -183,12 +186,13 @@ CACHES = {
     }
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
-EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem System
+#EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
+#EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem System
 
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.deinemailserver.com'  # Ersetze dies mit der Adresse deines E-Mail-Servers
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'deine-email@example.com'  # Die E-Mail-Adresse, die du zum Senden verwendest
-# EMAIL_HOST_PASSWORD = 'deinpasswort'  # Das Passwort für die E-Mail-Adresse
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'w01eb40f.kasserver.com'  # Ersetze dies mit der Adresse deines E-Mail-Servers
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'videoflix@philipp-klinger.com'  # Die E-Mail-Adresse, die du zum Senden verwendest
+EMAIL_HOST_PASSWORD = 'YrAZCV9wU5G9wE3juKmD'  # Das Passwort für die E-Mail-Adresse
+DEFAULT_FROM_EMAIL = 'videoflix@philipp-klinger.com'

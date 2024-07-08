@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.http import HttpResponseRedirect
 
 
+
 class RegisterUserEmailView(views.APIView):
     permission_classes = [AllowAny]
     

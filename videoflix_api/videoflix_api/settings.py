@@ -33,7 +33,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
     "https://philipp-klinger.developerakademie.net",
-    "https://videoflix.philipp-klinger.com"
+    "https://videoflix.philipp-klinger.com",
+    "https://backend-videoflix.philipp-klinger.com"
 ]
 
 FRONTEND_URL = 'http://localhost:4200/'

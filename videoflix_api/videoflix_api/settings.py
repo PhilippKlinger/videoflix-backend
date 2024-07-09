@@ -169,7 +169,7 @@ RQ_QUEUES = {
         "PORT": 6379,
         "DB": 0,
         "PASSWORD": "foobared",
-        "DEFAULT_TIMEOUT": 360,
+        "DEFAULT_TIMEOUT": 1000,
     },
 }
 

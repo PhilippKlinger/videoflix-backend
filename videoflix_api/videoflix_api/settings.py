@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 
 ALLOWED_HOSTS = [
@@ -178,7 +178,7 @@ RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://10.156.0.2:6379/1",
+        "LOCATION": "redis://localhost:6379/1",
         "OPTIONS": {
             "PASSWORD": "foobared",
             "CLIENT_CLASS": "django_redis.client.DefaultClient"

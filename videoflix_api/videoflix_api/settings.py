@@ -178,7 +178,7 @@ RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://10.156.0.2:6379/1",
+        "LOCATION": "redis://localhost:6379/1",
         "OPTIONS": {
             "PASSWORD": "foobared",
             "CLIENT_CLASS": "django_redis.client.DefaultClient"

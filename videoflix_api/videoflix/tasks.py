@@ -60,6 +60,7 @@ def convert_video(video_instance):
             '-vf', f'scale=-2:{res.split("p")[0]}',             # Skalieren auf 480p bpsw.
             '-c:v', 'libx264',                                  # Video-Codec: H.264
             '-preset', 'veryfast',                              # Schnelles Encoding
+            '-crf', '28',
             '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
             output_path
         ]
@@ -70,3 +71,10 @@ def convert_video(video_instance):
         
         except subprocess.CalledProcessError as e:
             print(f"Failed to convert video: {e}")
+
+
+# CRF-Werte und ihre Bedeutung
+# 0: Lossless (verlustfrei) – höchste Qualität, aber die größte Dateigröße.
+# 17-18: Visuell verlustfrei oder nahezu verlustfrei – hohe Qualität.
+# 23: Standardwert – gute Qualität bei vernünftiger Dateigröße.
+# 28: Niedrige Qualität – kleinere Dateigröße, aber sichtbare Qualitätsverluste.

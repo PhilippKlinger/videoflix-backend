@@ -36,13 +36,7 @@ class VideoConversionProgressView(views.APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, video_id):
-        video = get_object_or_404(Video, id=video_id)
-        progress = video.conversion_progress
-        current_resolution = video.current_resolution
-        
-        if progress == 0:
-            current_resolution = '480p'
-            
+        video = get_object_or_404(Video, id=video_id)            
         return Response({
             'progress': video.conversion_progress,
             'current_resolution': video.current_resolution

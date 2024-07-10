@@ -42,11 +42,12 @@ class VideoConversionProgressView(views.APIView):
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id)
         queue = get_queue('default')
+        
         try:
             convert_job = Job.fetch(video.convert_job_id, connection=queue.connection)
-        except Job.DoesNotExist:
+        except NoSuchJobError:
             return Response({'error': 'No such job found'}, status=status.HTTP_404_NOT_FOUND)
-
+        
         progress = video.conversion_progress
         current_resolution = video.current_resolution
         

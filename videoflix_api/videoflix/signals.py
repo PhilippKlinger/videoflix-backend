@@ -9,14 +9,15 @@ import django_rq
 
 @receiver(post_save, sender=Video)
 def video_post_save(sender, instance, created, **kwargs):
+    print(f"Video {instance.title} saved")
     if created:
+        print(f"Video {instance.title} uploaded")
         queue = django_rq.get_queue('default', autocommit=True)
         thumbnail_job = queue.enqueue(create_thumbnail, instance)
-        convert_job = queue.enqueue(convert_video, instance, depends_on=thumbnail_job)
-        instance.convert_job_id = convert_job.id
-        instance.save()
-
+        queue.enqueue(convert_video, instance, depends_on=thumbnail_job)
         
+        
+
 
 @receiver(pre_delete, sender=Video)
 def video_pre_delete(sender, instance, **kwargs):

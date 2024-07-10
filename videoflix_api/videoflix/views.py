@@ -34,32 +34,15 @@ class VideoUploadView(views.APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-from rq.exceptions import NoSuchJobError
-
 class VideoConversionProgressView(views.APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id)
-        queue = get_queue('default')
-        
-        try:
-            convert_job = Job.fetch(video.convert_job_id, connection=queue.connection)
-        except NoSuchJobError:
-            return Response({'error': 'No such job found'}, status=status.HTTP_404_NOT_FOUND)
-        
-        progress = video.conversion_progress
-        current_resolution = video.current_resolution
-        
-        if convert_job.is_finished:
-            progress = 100
-        
         return Response({
-            'progress': progress,
-            'current_resolution': current_resolution,
-            'convert_status': convert_job.get_status(),
+            'progress': video.conversion_progress,
+            'current_resolution': video.current_resolution
         })
-
 
 class VideoListView(views.APIView):
     permission_classes = [IsAuthenticated]

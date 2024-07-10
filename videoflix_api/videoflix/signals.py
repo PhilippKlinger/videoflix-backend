@@ -17,8 +17,6 @@ def video_post_save(sender, instance, created, **kwargs):
         instance.save()
 
         
-        
-
 
 @receiver(pre_delete, sender=Video)
 def video_pre_delete(sender, instance, **kwargs):

@@ -25,6 +25,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "philipp-klinger.developerakademie.net",
+    "34.159.223.143",
     "35.198.147.49",
     "backend-videoflix.philipp-klinger.com"
 ]

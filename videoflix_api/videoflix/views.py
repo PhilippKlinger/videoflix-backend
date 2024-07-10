@@ -37,7 +37,10 @@ class VideoConversionProgressView(views.APIView):
     
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id)
-        return Response({'progress': video.conversion_progress})
+        return Response({
+            'progress': video.conversion_progress,
+            'current_resolution': video.current_resolution
+        })
 
 class VideoListView(views.APIView):
     permission_classes = [IsAuthenticated]

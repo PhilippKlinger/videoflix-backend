@@ -48,7 +48,7 @@ def convert_video(video_instance):
     input_file = video_instance.video_file
     resolutions = ['480p', '720p', '1080p']
     
-    for res in resolutions:
+    for index, res in enumerate(resolutions):
         base_name = input_file.name.rsplit('.', 1)[0]
         extension = input_file.name.split('.')[-1]
         output_filename = f"{base_name}_{res}.{extension}"
@@ -65,14 +65,24 @@ def convert_video(video_instance):
             output_path
         ]
         try:
+            # Fortschritt und Auflösung aktualisieren
+            video_instance.conversion_progress = int((index / len(resolutions)) * 100)
+            video_instance.current_resolution = res
+            video_instance.save()
+
             subprocess.run(command, check=True) #shell=True
             VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
-            print(f"Video converted and saved to {output_path}")
-            video_instance.conversion_progress += int(100 / len(resolutions))
+            
+            # Nach erfolgreicher Konvertierung Fortschritt aktualisieren
+            video_instance.conversion_progress = int(((index + 1) / len(resolutions)) * 100)
+            video_instance.current_resolution = res
             video_instance.save()
+            print(f"Video converted and saved to {output_path}")
         
         except subprocess.CalledProcessError as e:
             print(f"Failed to convert video: {e}")
+            video_instance.conversion_progress = 0  # Setzt den Fortschritt auf 0 bei Fehler
+            video_instance.save()
 
 
 # CRF-Werte und ihre Bedeutung

@@ -29,6 +29,7 @@ class Video(models.Model):
     thumbnail = models.ImageField(upload_to='thumbnails/', blank=True, null=True)
     favorited_by = models.ManyToManyField(Profile, related_name='favorite_videos', blank=True)
     conversion_progress = models.IntegerField(default=0)
+    current_resolution = models.CharField(max_length=10, blank=True, null=True)
 
     def __str__(self):
         return self.title

@@ -49,7 +49,7 @@ def convert_video(video_instance):
     resolutions = ['480p', '720p', '1080p']
     total_resolutions = len(resolutions)
     
-    for index, res in enumerate(resolutions):
+    for index, res in resolutions:
         base_name = input_file.name.rsplit('.', 1)[0]
         extension = input_file.name.split('.')[-1]
         output_filename = f"{base_name}_{res}.{extension}"
@@ -75,7 +75,8 @@ def convert_video(video_instance):
         
         except subprocess.CalledProcessError as e:
             print(f"Failed to convert video: {e}")
-            video_instance.conversion_progress = 0  # Setzt den Fortschritt auf 0 bei Fehler
+            video_instance.conversion_progress = 0
+            video_instance.current_resolution = None
             video_instance.save()
 
 

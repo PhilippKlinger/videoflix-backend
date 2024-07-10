@@ -6,8 +6,6 @@ from .models import Video, Profile
 from .serializers import VideoSerializer
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
-from rq.job import Job
-from django_rq import get_queue
 
 # testweise clearing cache
 
@@ -39,6 +37,12 @@ class VideoConversionProgressView(views.APIView):
     
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id)
+        progress = video.conversion_progress
+        current_resolution = video.current_resolution
+        
+        if progress == 0:
+            current_resolution = '480p'
+            
         return Response({
             'progress': video.conversion_progress,
             'current_resolution': video.current_resolution

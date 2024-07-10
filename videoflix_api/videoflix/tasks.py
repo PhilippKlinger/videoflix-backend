@@ -2,7 +2,6 @@ import subprocess
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
-import django_rq
 
 def create_thumbnail(video_instance):
     input_file = video_instance.video_file
@@ -73,12 +72,6 @@ def convert_video(video_instance):
             video_instance.current_resolution = res
             video_instance.save()
             print(f"Video converted and saved to {output_path}")
-            
-            # Aktualisiere die Job-ID für die nächste Konvertierung
-            queue = django_rq.get_queue('default', autocommit=True)
-            next_job = queue.enqueue(convert_video, video_instance)
-            video_instance.convert_job_id = next_job.id
-            video_instance.save()
         
         except subprocess.CalledProcessError as e:
             print(f"Failed to convert video: {e}")

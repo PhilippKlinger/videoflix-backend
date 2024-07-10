@@ -59,7 +59,7 @@ def convert_video(video_instance):
             '-i', default_storage.path(input_file.name),
             '-vf', f'scale=-2:{res.split("p")[0]}',             # Skalieren auf 480p bpsw.
             '-c:v', 'libx264',                                  # Video-Codec: H.264
-            '-preset', 'veryfast',                              # Schnelles Encoding
+            '-preset', 'ultrafast',                              # Schnelles Encoding
             '-crf', '28',
             '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
             output_path

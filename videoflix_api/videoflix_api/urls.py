@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from videoflix.views import VideoUploadView, VideoListView, VideoDetailView, VideoClearCache
+from videoflix.views import VideoConversionProgressView, VideoUploadView, VideoListView, VideoDetailView, VideoClearCache
 from users.views import RegisterUserView, LoginUserView, ActivateAccountView, RequestNewActivationLinkView, PasswordResetRequestView, PasswordResetConfirmView, DeleteAccountView, UserProfileView,  RegisterUserEmailView, VerifyResetCodeView
 #from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
@@ -28,6 +28,7 @@ urlpatterns = [
     path('upload/', VideoUploadView.as_view(), name='video-upload'),
     path('videos/', VideoListView.as_view(), name='video-list'),
     path('videos/<int:pk>/', VideoDetailView.as_view(), name='video-list-detail'),
+    path('conversion-progress/<int:video_id>/', VideoConversionProgressView.as_view(), name='conversion-progress'),
     path('django-rq/', include('django_rq.urls')),
     path('clear-cache/', VideoClearCache.as_view(), name='video-clear-cache' ),
     #------------------------------------------authentication---------------------------------------------------#

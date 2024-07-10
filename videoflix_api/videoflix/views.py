@@ -32,6 +32,12 @@ class VideoUploadView(views.APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class VideoConversionProgressView(views.APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, video_id):
+        video = get_object_or_404(Video, id=video_id)
+        return Response({'progress': video.conversion_progress})
 
 class VideoListView(views.APIView):
     permission_classes = [IsAuthenticated]

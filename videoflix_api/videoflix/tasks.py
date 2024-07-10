@@ -68,6 +68,8 @@ def convert_video(video_instance):
             subprocess.run(command, check=True) #shell=True
             VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
             print(f"Video converted and saved to {output_path}")
+            video_instance.conversion_progress += int(100 / len(resolutions))
+            video_instance.save()
         
         except subprocess.CalledProcessError as e:
             print(f"Failed to convert video: {e}")

@@ -2,6 +2,7 @@ import subprocess
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
+import redis
 
 def create_thumbnail(video_instance):
     input_file = video_instance.video_file
@@ -44,7 +45,7 @@ def create_thumbnail(video_instance):
         # Bereinige die temporär erstellte Datei
         default_storage.delete(output_filename)
 
-def convert_video(video_instance, res):
+def convert_video(video_instance, res, job_id):
     input_file = video_instance.video_file
     base_name = input_file.name.rsplit('.', 1)[0]
     extension = input_file.name.split('.')[-1]
@@ -62,9 +63,24 @@ def convert_video(video_instance, res):
         '-threads', '0',
         output_path
     ]
-    
+
+    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+
     try:
-        subprocess.run(command, check=True)
+        redis_client.set(f'job:{job_id}:progress', 0)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        for line in process.stderr:
+            if b'frame=' in line:
+                progress = int(line.split(b'frame=')[1].strip().split(b' ')[0])  # Adjust this parsing according to ffmpeg output
+                redis_client.set(f'job:{job_id}:progress', progress)
+        
+        process.wait()
+        redis_client.set(f'job:{job_id}:progress', 100)
+
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, command)
+
         VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
         video_instance.current_resolution = res
         video_instance.save()
@@ -74,8 +90,7 @@ def convert_video(video_instance, res):
         print(f"Failed to convert video: {e}")
         video_instance.current_resolution = None
         video_instance.save()
-
-
+        redis_client.set(f'job:{job_id}:progress', 0)
 
 # CRF-Werte und ihre Bedeutung
 # 0: Lossless (verlustfrei) – höchste Qualität, aber die größte Dateigröße.

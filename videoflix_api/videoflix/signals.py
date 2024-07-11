@@ -15,8 +15,8 @@ def video_post_save(sender, instance, created, **kwargs):
         thumbnail_job = queue.enqueue(create_thumbnail, instance)
         resolutions = ["480p", "720p", "1080p"]
 
-        for res in resolutions:
-            queue.enqueue(convert_video, instance, res, depends_on=thumbnail_job)
+        for index, res in enumerate(resolutions):
+            job = queue.enqueue(convert_video, instance, res, job_id=f"{instance.id}-{res}", depends_on=thumbnail_job)
 
 
 @receiver(pre_delete, sender=Video)

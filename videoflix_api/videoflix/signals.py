@@ -14,7 +14,15 @@ def video_post_save(sender, instance, created, **kwargs):
         print(f"Video {instance.title} uploaded")
         queue = django_rq.get_queue('default', autocommit=True)
         thumbnail_job = queue.enqueue(create_thumbnail, instance)
-        queue.enqueue(convert_video, instance, depends_on=thumbnail_job)
+        resolutions = ['480p', '720p', '1080p']
+        convert_jobs = []
+        
+        for res in resolutions:
+            job = queue.enqueue(convert_video, instance, res, depends_on=thumbnail_job)
+            convert_jobs.append(job.id)
+        
+        instance.convert_job_ids = ','.join(convert_jobs)
+        instance.save()
         
         
 

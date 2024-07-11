@@ -30,6 +30,7 @@ class Video(models.Model):
     favorited_by = models.ManyToManyField(Profile, related_name='favorite_videos', blank=True)
     conversion_progress = models.IntegerField(default=0)
     current_resolution = models.CharField(max_length=10, blank=True, null=True)
+    convert_job_ids = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.title

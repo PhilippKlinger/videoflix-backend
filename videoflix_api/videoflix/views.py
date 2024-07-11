@@ -6,8 +6,6 @@ from .models import Video, Profile
 from .serializers import VideoSerializer
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
-from django_rq import get_queue
-from rq.job import Job
 
 # testweise clearing cache
 
@@ -38,41 +36,11 @@ class VideoConversionProgressView(views.APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, video_id):
-        video = get_object_or_404(Video, id=video_id)
-        queue = get_queue('default')
-        
-        if video.convert_job_ids:
-            job_ids = video.convert_job_ids.split(',')
-            job_statuses = []
-
-            for job_id in job_ids:
-                try:
-                    job = Job.fetch(job_id, connection=queue.connection)
-                    job_status = {
-                        'job_id': job_id,
-                        'status': job.get_status(),
-                        'is_finished': job.is_finished,
-                        'is_queued': job.is_queued,
-                        'is_started': job.is_started,
-                        'is_failed': job.is_failed
-                    }
-                    job_statuses.append(job_status)
-                except Exception as e:
-                    job_statuses.append({
-                        'job_id': job_id,
-                        'status': 'not found',
-                        'error': str(e)
-                    })
-
-            return Response({
-                'progress': video.conversion_progress,
-                'current_resolution': video.current_resolution,
-                'job_statuses': job_statuses
-            })
-        else:
-            return Response({
-                'error': 'No job IDs found for this video.'
-            }, status=status.HTTP_404_NOT_FOUND)
+        video = get_object_or_404(Video, id=video_id)            
+        return Response({
+            'progress': video.conversion_progress,
+            'current_resolution': video.current_resolution
+        })
 
 class VideoListView(views.APIView):
     permission_classes = [IsAuthenticated]

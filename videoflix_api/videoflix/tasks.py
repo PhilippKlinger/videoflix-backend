@@ -1,4 +1,5 @@
 import subprocess
+from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
@@ -64,7 +65,7 @@ def convert_video(video_instance, res, job_id):
         output_path
     ]
 
-    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, password=settings.REDIS_PASSWORD)
 
     try:
         redis_client.set(f'job:{job_id}:progress', 0)

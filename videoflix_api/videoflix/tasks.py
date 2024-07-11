@@ -2,8 +2,11 @@ import subprocess
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
+import pdb
+
 
 def create_thumbnail(video_instance):
+    pdb.set_trace()  # Debugger startet hier
     input_file = video_instance.video_file
 
     if not input_file:

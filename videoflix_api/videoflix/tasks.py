@@ -63,7 +63,6 @@ def convert_video(video_instance):
             '-preset', 'ultrafast',                              # Schnelles Encoding
             '-crf', '32',
             '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
-            '-threads', '0',
             output_path
         ]
         try:

@@ -44,6 +44,7 @@ def create_thumbnail(video_instance):
         # Bereinige die temporär erstellte Datei
         default_storage.delete(output_filename)
 
+
 def convert_video(video_instance):
     input_file = video_instance.video_file
     resolutions = ['480p', '720p', '1080p']
@@ -61,7 +62,7 @@ def convert_video(video_instance):
             '-vf', f'scale=-2:{res.split("p")[0]}',             # Skalieren auf 480p bpsw.
             '-c:v', 'libx264',                                  # Video-Codec: H.264
             '-preset', 'ultrafast',                              # Schnelles Encoding
-            '-crf', '28',
+            '-crf', '32',
             '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
             output_path
         ]

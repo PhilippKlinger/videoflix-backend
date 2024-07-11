@@ -65,7 +65,7 @@ def convert_video(video_instance, res, job_id):
         output_path
     ]
 
-    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, password=settings.RQ_QUEUES['default']['PASSWORD'])
+    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, password='foobared')
 
     try:
         redis_client.set(f'job:{job_id}:progress', 0)

@@ -1,4 +1,5 @@
 import subprocess
+import os
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
@@ -10,10 +11,7 @@ def create_thumbnail(video_instance):
         print("No file attached to the video instance.")
         return
 
-    # Hier wird der Dateiname als String extrahiert
     file_name = input_file.name
-
-    # Sicherstellen, dass der Dateiname vorhanden und korrekt ist
     if '.' in file_name:
         base_name = file_name.rsplit('.', 1)[0]
     else:
@@ -22,6 +20,10 @@ def create_thumbnail(video_instance):
 
     output_filename = f"{base_name}_thumbnail.jpg"
     output_path = default_storage.path(output_filename)
+    output_dir = os.path.dirname(output_path)
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     command = [
         'ffmpeg',
@@ -37,12 +39,13 @@ def create_thumbnail(video_instance):
         subprocess.run(command, check=True) #shell=True
         with open(output_path, 'rb') as f:
             video_instance.thumbnail.save(output_filename, ContentFile(f.read()), save=True)
+        video_instance.save()
         print(f"Thumbnail created and saved to {output_filename}")
     except subprocess.CalledProcessError as e:
         print(f"Failed to create thumbnail: {e}")
     finally:
-        # Bereinige die temporär erstellte Datei
-        default_storage.delete(output_filename)
+        if default_storage.exists(output_filename):
+            default_storage.delete(output_filename)
 
 
 def convert_video(video_instance):

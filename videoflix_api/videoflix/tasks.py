@@ -1,9 +1,7 @@
 import subprocess
-from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
-import redis
 
 def create_thumbnail(video_instance):
     input_file = video_instance.video_file
@@ -46,52 +44,42 @@ def create_thumbnail(video_instance):
         # Bereinige die temporär erstellte Datei
         default_storage.delete(output_filename)
 
-def convert_video(video_instance, res, job_id):
+def convert_video(video_instance):
     input_file = video_instance.video_file
-    base_name = input_file.name.rsplit('.', 1)[0]
-    extension = input_file.name.split('.')[-1]
-    output_filename = f"{base_name}_{res}.{extension}"
-    output_path = default_storage.path(output_filename)
+    resolutions = ['480p', '720p', '1080p']
+    total_resolutions = len(resolutions)
     
-    command = [
-        'ffmpeg',
-        '-i', default_storage.path(input_file.name),
-        '-vf', f'scale=-2:{res.split("p")[0]}',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '32',
-        '-c:a', 'copy',
-        '-threads', '0',
-        output_path
-    ]
-
-    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, password='foobared')
-
-    try:
-        redis_client.set(f'job:{job_id}:progress', 0)
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    for index, res in resolutions:
+        base_name = input_file.name.rsplit('.', 1)[0]
+        extension = input_file.name.split('.')[-1]
+        output_filename = f"{base_name}_{res}.{extension}"
+        output_path = default_storage.path(output_filename)
         
-        for line in process.stderr:
-            if b'frame=' in line:
-                progress = int(line.split(b'frame=')[1].strip().split(b' ')[0])  # Adjust this parsing according to ffmpeg output
-                redis_client.set(f'job:{job_id}:progress', progress)
+        command = [
+            'ffmpeg',
+            '-i', default_storage.path(input_file.name),
+            '-vf', f'scale=-2:{res.split("p")[0]}',             # Skalieren auf 480p bpsw.
+            '-c:v', 'libx264',                                  # Video-Codec: H.264
+            '-preset', 'ultrafast',                              # Schnelles Encoding
+            '-crf', '32',
+            '-c:a', 'copy',                                     # Audio kopieren ohne Neukodierung
+            '-threads', '0',
+            output_path
+        ]
+        try:
+            subprocess.run(command, check=True)
+            video_instance.conversion_progress = int(((index + 1) / total_resolutions) * 100)
+            video_instance.current_resolution = res
+            video_instance.save()
+            VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
+            print(f"Video converted and saved to {output_path}")
         
-        process.wait()
-        redis_client.set(f'job:{job_id}:progress', 100)
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to convert video: {e}")
+            video_instance.conversion_progress = 0
+            video_instance.current_resolution = None
+            video_instance.save()
 
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, command)
-
-        VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
-        video_instance.current_resolution = res
-        video_instance.save()
-        print(f"Video converted and saved to {output_path}")
-        
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to convert video: {e}")
-        video_instance.current_resolution = None
-        video_instance.save()
-        redis_client.set(f'job:{job_id}:progress', 0)
 
 # CRF-Werte und ihre Bedeutung
 # 0: Lossless (verlustfrei) – höchste Qualität, aber die größte Dateigröße.

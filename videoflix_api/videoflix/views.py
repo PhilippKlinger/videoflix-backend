@@ -6,7 +6,7 @@ from .models import Video, Profile
 from .serializers import VideoSerializer
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
-import redis
+
 # testweise clearing cache
 
 class VideoClearCache(views.APIView):
@@ -36,15 +36,9 @@ class VideoConversionProgressView(views.APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, video_id):
-        video = get_object_or_404(Video, id=video_id)
-        redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, password='foobared')
-        progress = redis_client.get(f'job:{video_id}-{video.current_resolution}:progress')
-        if progress is None:
-            progress = 0
-        else:
-            progress = int(progress)
+        video = get_object_or_404(Video, id=video_id)            
         return Response({
-            'progress': progress,
+            'progress': video.conversion_progress,
             'current_resolution': video.current_resolution
         })
 

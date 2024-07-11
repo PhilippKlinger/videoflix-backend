@@ -47,8 +47,9 @@ def create_thumbnail(video_instance):
 def convert_video(video_instance):
     input_file = video_instance.video_file
     resolutions = ['480p', '720p', '1080p']
+    total_resolutions = len(resolutions)
     
-    for res in resolutions:
+    for index, res in enumerate(resolutions):
         base_name = input_file.name.rsplit('.', 1)[0]
         extension = input_file.name.split('.')[-1]
         output_filename = f"{base_name}_{res}.{extension}"
@@ -65,14 +66,17 @@ def convert_video(video_instance):
             output_path
         ]
         try:
-            subprocess.run(command, check=True) #shell=True
+            subprocess.run(command, check=True)
             VideoResolution.objects.create(original_video=video_instance, resolution=res, converted_file=output_filename)
-            print(f"Video converted and saved to {output_path}")
-            video_instance.conversion_progress += int(100 / len(resolutions))
+            video_instance.conversion_progress = int(((index + 1) / total_resolutions) * 100)
+            video_instance.current_resolution = res
             video_instance.save()
+            print(f"Video converted and saved to {output_path}")
         
         except subprocess.CalledProcessError as e:
             print(f"Failed to convert video: {e}")
+            video_instance.conversion_progress = 0
+            video_instance.save()
 
 
 # CRF-Werte und ihre Bedeutung

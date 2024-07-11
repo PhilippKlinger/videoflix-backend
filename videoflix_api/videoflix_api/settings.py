@@ -21,7 +21,7 @@ SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)
 DEBUG = True
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://34.159.223.143',
+    'http://34.159.223.143',
     # 'https://your-other-allowed-origin.com'
 ]
 

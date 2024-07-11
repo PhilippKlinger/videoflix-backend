@@ -1,4 +1,5 @@
 
+from rq import Retry
 from .models import Video
 from django.dispatch import receiver
 from django.db.models.signals import post_save, pre_delete
@@ -14,7 +15,7 @@ def video_post_save(sender, instance, created, **kwargs):
         print(f"Video {instance.title} uploaded")
         thumbnails_queue = django_rq.get_queue('thumbnails', autocommit=True)
         videos_queue = django_rq.get_queue('default', autocommit=True)
-        thumbnails_queue.enqueue(create_thumbnail, instance)
+        thumbnails_queue.enqueue(create_thumbnail, instance, retry=Retry(max=3, interval=[10, 30, 60]))
         videos_queue.enqueue(convert_video, instance)
         
         

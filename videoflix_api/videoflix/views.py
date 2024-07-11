@@ -37,7 +37,7 @@ class VideoConversionProgressView(views.APIView):
     
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id)
-        redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+        redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, password='foobared')
         progress = redis_client.get(f'job:{video_id}-{video.current_resolution}:progress')
         if progress is None:
             progress = 0

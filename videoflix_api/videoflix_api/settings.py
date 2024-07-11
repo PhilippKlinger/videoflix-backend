@@ -172,6 +172,12 @@ RQ_QUEUES = {
         "PASSWORD": "foobared",
         "DEFAULT_TIMEOUT": 360,
     },
+    'thumbnails': {
+        'HOST': 'localhost',
+        'PORT': 6379,
+        'DB': 1,
+        'DEFAULT_TIMEOUT': 360,
+    },
 }
 
 RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers

@@ -12,7 +12,7 @@ def video_post_save(sender, instance, created, **kwargs):
     if created:
         try:
             print(f"Video {instance.title} uploaded")
-            thumbnails_queue = django_rq.get_queue("thumbnails", autocommit=True)
+            thumbnails_queue = django_rq.get_queue("default", autocommit=True)
             videos_queue = django_rq.get_queue("default", autocommit=True)
             thumbnails_queue.enqueue(create_thumbnail, instance.id)
             videos_queue.enqueue(convert_video, instance.id, depend_on=thumbnails_queue)

@@ -14,8 +14,8 @@ def video_post_save(sender, instance, created, **kwargs):
         # create_thumbnail(instance)
         thumbnails_queue = django_rq.get_queue("thumbnails", autocommit=True)
         videos_queue = django_rq.get_queue("default", autocommit=True)
-        thumbnails_queue.enqueue(create_thumbnail, instance)
-        videos_queue.enqueue(convert_video, instance, demand_on=thumbnails_queue )
+        thumbnails_queue.enqueue(create_thumbnail, instance.id)
+        videos_queue.enqueue(convert_video, instance.id, demand_on=thumbnails_queue)
 
 
 @receiver(pre_delete, sender=Video)

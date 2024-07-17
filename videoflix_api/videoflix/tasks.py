@@ -3,7 +3,8 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .models import VideoResolution, Video
 
-def create_thumbnail(video_instance):
+def create_thumbnail(video_id):
+    video_instance = Video.objects.get(id=video_id)
     input_file = video_instance.video_file
 
     if not input_file:
@@ -45,7 +46,8 @@ def create_thumbnail(video_instance):
         default_storage.delete(output_filename)
 
 
-def convert_video(video_instance):
+def convert_video(video_id):
+    video_instance = Video.objects.get(id=video_id)
     input_file = video_instance.video_file
     resolutions = ['480p', '720p', '1080p']
     total_resolutions = len(resolutions)

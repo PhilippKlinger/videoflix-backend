@@ -26,7 +26,7 @@ def create_thumbnail(video_instance):
     command = [
         'ffmpeg',
         '-i', default_storage.path(file_name),
-        '-ss', '00:00:10',  # Capture the image 10 seconds into the video
+        '-ss', '00:00:05',  # Capture the image 5 seconds into the video
         '-vframes', '1',
         '-q:v', '2',
         '-s', '640x480',  # Thumbnail size

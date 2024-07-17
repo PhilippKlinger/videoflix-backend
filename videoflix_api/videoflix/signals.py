@@ -10,13 +10,18 @@ import django_rq
 def video_post_save(sender, instance, created, **kwargs):
     print(f"Video {instance.title} saved")
     if created:
-        print(f"Video {instance.title} uploaded")
-        # create_thumbnail(instance)
-        # thumbnails_queue = django_rq.get_queue("thumbnails", autocommit=True)
-        # videos_queue = django_rq.get_queue("default", autocommit=True)
-        # thumbnails_queue.enqueue(create_thumbnail, instance.id)
-        # videos_queue.enqueue(convert_video, instance.id, demand_on=thumbnails_queue)
-
+        try:
+            print(f"Video {instance.title} uploaded")
+            thumbnails_queue = django_rq.get_queue("thumbnails", autocommit=False)
+            videos_queue = django_rq.get_queue("default", autocommit=False)
+            thumbnails_queue.enqueue(create_thumbnail, instance.id)
+            videos_queue.enqueue(convert_video, instance.id, depend_on=thumbnails_queue)
+        
+            thumbnails_queue.connection.commit()
+            videos_queue.connection.commit()
+        
+        except Exception as e:
+            print(f"Failed to enqueue tasks: {e}")
 
 @receiver(pre_delete, sender=Video)
 def video_pre_delete(sender, instance, **kwargs):

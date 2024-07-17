@@ -15,7 +15,7 @@ def video_post_save(sender, instance, created, **kwargs):
             thumbnails_queue = django_rq.get_queue("default", autocommit=True)
             videos_queue = django_rq.get_queue("default", autocommit=True)
             thumbnails_queue.enqueue(create_thumbnail, instance.id)
-            videos_queue.enqueue(convert_video, instance.id, depend_on=thumbnails_queue)
+            videos_queue.enqueue(convert_video, instance.id)
                 
         except Exception as e:
             print(f"Failed to enqueue tasks: {e}")

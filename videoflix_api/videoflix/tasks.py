@@ -30,7 +30,7 @@ def create_thumbnail(video_id):
         '-ss', '00:00:05',  # Capture the image 5 seconds into the video
         '-vframes', '1',
         '-q:v', '2',
-        '-s', '640x480',  # Thumbnail size
+        '-s', '1920x1440',  # Thumbnail size
         output_path
     ]
 

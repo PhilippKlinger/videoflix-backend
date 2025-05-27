@@ -1,6 +1,5 @@
 from datetime import date
 from django.db import models
-from accounts_app.models import Profile
 
 class Video(models.Model):
     
@@ -27,7 +26,6 @@ class Video(models.Model):
     category = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default=CATEGORY_CHOICES[0][0])
     video_file = models.FileField(upload_to='videos', blank=True, null=True)
     thumbnail = models.ImageField(upload_to='thumbnails/', blank=True, null=True)
-    favorited_by = models.ManyToManyField(Profile, related_name='favorite_videos', blank=True)
     conversion_progress = models.IntegerField(default=0)
     current_resolution = models.CharField(max_length=10, blank=True, null=True)
 

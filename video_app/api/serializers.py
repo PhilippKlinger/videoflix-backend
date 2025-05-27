@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from video_app.models import Video, VideoResolution
-from accounts_app.api.serializers import ProfileSerializer
+
 
 class VideoResolutionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,8 +9,7 @@ class VideoResolutionSerializer(serializers.ModelSerializer):
 
 class VideoSerializer(serializers.ModelSerializer):
     resolutions = VideoResolutionSerializer(many=True, read_only=True)
-    favorited_by = ProfileSerializer(many=True, read_only=True)
-
+   
     class Meta:
         model = Video
         fields = "__all__"

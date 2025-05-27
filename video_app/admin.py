@@ -10,7 +10,6 @@ class VideoResolutionInline(admin.TabularInline):
 @admin.register(Video)
 class VideoAdmin(ImportExportModelAdmin):
     inlines = [VideoResolutionInline]
-    filter_horizontal = ('favorited_by',)
     list_display = ('title', 'description', 'uploaded_at')
     search_fields = ('title', 'description')
 

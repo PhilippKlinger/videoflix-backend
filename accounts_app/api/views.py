@@ -7,7 +7,7 @@ from rest_framework import views, status
 from django.core.mail import send_mail
 from django.urls import reverse
 from django.conf import settings
-from .models import CustomUser, Profile
+from accounts_app.models import CustomUser, Profile
 from django.utils import timezone
 from django.http import HttpResponseRedirect
 

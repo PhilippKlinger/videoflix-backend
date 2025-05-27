@@ -1,4 +1,4 @@
-from .models import Video
+from video_app.models import Video
 from django.dispatch import receiver
 from django.db.models.signals import post_save, pre_delete
 from django.core.files.storage import default_storage

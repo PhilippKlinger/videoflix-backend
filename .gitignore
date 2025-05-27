@@ -112,9 +112,9 @@ Control.ca-bundle
 Control.system-ca-bundle 
 GitHub.sublime-settings 
 
-# Docker (optional)
+# Docker
 .dockerignore
-docker-compose.yml
+# docker-compose.yml
 
 # Node.js (optional)
 node_modules/

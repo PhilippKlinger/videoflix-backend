@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from .models import Video, VideoResolution
-from accounts_app.serializers import ProfileSerializer
+from video_app.models import Video, VideoResolution
+from accounts_app.api.serializers import ProfileSerializer
 
 class VideoResolutionSerializer(serializers.ModelSerializer):
     class Meta:

@@ -1,0 +1,46 @@
+name: videoflix-dev-docker
+
+services:
+  postgres:
+    image: postgres
+    container_name: videoflix-dev-postgres
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_DB: videoflix_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ElsuE348Df45gf
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - videoflix-net
+
+  redis:
+    image: redis
+    container_name: videoflix-dev-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass foobared
+    networks:
+      - videoflix-net
+
+  rqworker:
+    image: python:3.12-slim
+    container_name: videoflix-dev-rq-worker
+    working_dir: /app
+    volumes:
+      - ..:/app
+    command: >
+      sh -c "pip install -r requirements.txt && rq worker default --url redis://:foobared@redis:6379"
+    env_file:
+      - ../.env
+    depends_on:
+      - redis
+    networks:
+      - videoflix-net
+
+volumes:
+  postgres_data:
+
+networks:
+  videoflix-net:

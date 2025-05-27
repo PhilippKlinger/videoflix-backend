@@ -24,18 +24,11 @@ DEBUG = True
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "philipp-klinger.developerakademie.net",
-    "34.159.223.143",
-    "35.198.147.49",
-    "backend-videoflix.philipp-klinger.com"
 ]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
-    "https://philipp-klinger.developerakademie.net",
-    "https://videoflix.philipp-klinger.com",
-    "https://backend-videoflix.philipp-klinger.com"
 ]
 
 FRONTEND_URL = 'http://localhost:4200/'
@@ -43,7 +36,6 @@ FRONTEND_URL = 'http://localhost:4200/'
 INTERNAL_IPS = [
     '127.0.0.1'
 ]
-
 
 # Application definition
 
@@ -55,16 +47,16 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_rq",
-    "videoflix.apps.VideoflixConfig",
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
     "debug_toolbar",
     "import_export",
-    "users",
+    "accounts_app",
+    "video_app",
 ]
 
-AUTH_USER_MODEL = 'users.CustomUser'
+AUTH_USER_MODEL = 'accounts_app.CustomUser'
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -89,7 +81,7 @@ AUTHENTICATION_BACKENDS = (
     'users.backends.EmailBackend'
 )
 
-ROOT_URLCONF = "videoflix_api.urls"
+ROOT_URLCONF = "core.urls"
 
 TEMPLATES = [
     {
@@ -107,7 +99,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "videoflix_api.wsgi.application"
+WSGI_APPLICATION = "core.wsgi.application"
 
 IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 
@@ -191,7 +183,7 @@ CACHES = {
             "PASSWORD": "foobared",
             "CLIENT_CLASS": "django_redis.client.DefaultClient"
         },
-        "KEY_PREFIX": "videoflix_api",
+        "KEY_PREFIX": "video_app",
     }
 }
 

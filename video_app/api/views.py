@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import Video, Profile
+from video_app.models import Video, Profile
 from .serializers import VideoSerializer
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser

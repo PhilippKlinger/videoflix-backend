@@ -3,7 +3,7 @@ from django.apps import AppConfig
 
 class VideoflixConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'videoflix'
+    name = 'video_app'
 
     def ready(self):
-        from . import signals
+        from .api import signals

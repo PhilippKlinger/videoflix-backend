@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 import environ
 
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)"
+
 # Initialize environ
 env = environ.Env()
 environ.Env.read_env(env_file=str(".env"))
@@ -14,8 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)"
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -117,6 +119,7 @@ MEDIA_URL = '/media/'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
+
 DATABASES = {"default": env.db()}
 
 
@@ -156,9 +159,11 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+
 RQ_QUEUES = {
     "default": {
-        "HOST": "localhost",
+        "HOST": REDIS_HOST,
         "PORT": 6379,
         "DB": 0,
         "PASSWORD": "foobared",
@@ -178,7 +183,7 @@ RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://localhost:6379/1",
+        "LOCATION": f"redis://{REDIS_HOST}:6379/1",
         "OPTIONS": {
             "PASSWORD": "foobared",
             "CLIENT_CLASS": "django_redis.client.DefaultClient"

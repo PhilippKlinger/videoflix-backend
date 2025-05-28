@@ -2,13 +2,14 @@ import os
 from pathlib import Path
 import environ
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-!p53y*$l5qhik%5&i1!r@_wau_i7bwjrvnnzkz*g#pn9+yk_g)"
+
 
 # Initialize environ
 env = environ.Env()
 environ.Env.read_env(env_file=str(".env"))
 
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env("SECRET_KEY")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

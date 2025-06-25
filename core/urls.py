@@ -11,7 +11,7 @@ schema_view = get_schema_view(
     openapi.Info(
         title="Coderr API",
         default_version="v1",
-        description="API documentation for the Coderr service marketplace backend.",
+        description="API documentation for the Videoflix service backend.",
     ),
     public=True,
     permission_classes=[permissions.AllowAny],

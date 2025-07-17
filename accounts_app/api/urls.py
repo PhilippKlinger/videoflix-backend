@@ -1,8 +1,9 @@
 from django.urls import path
 from .views import (
+    CustomLoginCookieView,
+    CustomLoginCookieRefreshView,
     HardDeleteAccountView,
     RegisterUserView,
-    LoginUserView,
     ActivateAccountView,
     RequestNewActivationLinkView,
     PasswordResetRequestView,
@@ -11,10 +12,12 @@ from .views import (
     SoftDeleteAccountView,
 )
 
+
 urlpatterns = [
 #------------------------------------------authentication---------------------------------------------------#
     path('register/', RegisterUserView.as_view(), name='register-user'),
-    path('login/', LoginUserView.as_view(), name='login-user'),
+    path('login/', CustomLoginCookieView.as_view(), name='login-user'),
+    path('token/refresh/', CustomLoginCookieRefreshView.as_view(), name='login-user-refresh'),
     path('activate/<str:activation_code>/', ActivateAccountView.as_view(), name='activate_account'),
     path('request-new-activation-link/', RequestNewActivationLinkView.as_view(), name='request_new_activation_link'),
     path('delete-account/', SoftDeleteAccountView.as_view(), name='soft-delete-account'),

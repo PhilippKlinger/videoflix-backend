@@ -3,7 +3,6 @@ from pathlib import Path
 import environ
 
 
-
 # Initialize environ
 env = environ.Env()
 environ.Env.read_env(env_file=str(".env"))
@@ -19,7 +18,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -30,15 +28,14 @@ ALLOWED_HOSTS = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:4200",
-    "http://127.0.0.1:4200",
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
 ]
+CORS_ALLOW_CREDENTIALS = True
 
-FRONTEND_URL = 'http://localhost:4200/'
+FRONTEND_URL = "http://localhost:5500/"
 
-INTERNAL_IPS = [
-    '127.0.0.1'
-]
+INTERNAL_IPS = ["127.0.0.1"]
 
 # Application definition
 
@@ -52,7 +49,7 @@ INSTALLED_APPS = [
     "django_rq",
     "corsheaders",
     "rest_framework",
-    "rest_framework.authtoken",
+    "rest_framework_simplejwt",
     "debug_toolbar",
     "import_export",
     "accounts_app",
@@ -60,7 +57,7 @@ INSTALLED_APPS = [
     "drf_yasg",
 ]
 
-AUTH_USER_MODEL = 'accounts_app.CustomUser'
+AUTH_USER_MODEL = "accounts_app.CustomUser"
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -75,14 +72,17 @@ MIDDLEWARE = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "accounts_app.api.authentication.JWTAuthenticationFromCookie",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
     ],
 }
 
 AUTHENTICATION_BACKENDS = (
-    'django.contrib.auth.backends.ModelBackend',
-    'accounts_app.api.backends.EmailBackend'
+    "django.contrib.auth.backends.ModelBackend",
+    "accounts_app.api.backends.EmailBackend",
 )
 
 ROOT_URLCONF = "core.urls"
@@ -111,12 +111,12 @@ IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
 
-STATIC_URL = '/static/'
+STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
 # Media files
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+MEDIA_URL = "/media/"
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
@@ -188,7 +188,7 @@ CACHES = {
         "LOCATION": f"redis://{REDIS_HOST}:6379/1",
         "OPTIONS": {
             "PASSWORD": "foobared",
-            "CLIENT_CLASS": "django_redis.client.DefaultClient"
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
         "KEY_PREFIX": "video_app",
     }
@@ -197,24 +197,24 @@ CACHES = {
 # EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
 # EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem System
 
-EMAIL_BACKEND = env('EMAIL_BACKEND')
-EMAIL_HOST = env('EMAIL_HOST')
-EMAIL_PORT = env.int('EMAIL_PORT')
-EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS')
-EMAIL_HOST_USER = env('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+EMAIL_BACKEND = env("EMAIL_BACKEND")
+EMAIL_HOST = env("EMAIL_HOST")
+EMAIL_PORT = env.int("EMAIL_PORT")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS")
+EMAIL_HOST_USER = env("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
         },
     },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
     },
 }

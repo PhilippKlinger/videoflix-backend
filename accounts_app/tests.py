@@ -36,7 +36,7 @@ class AccountsIntegrationTests(APITestCase):
             "email": "neu@example.com",
             "username": "neuuser",
             "password": "NeuUser123!",
-            "password_confirm": "NeuUser123!"
+            "confirmed_password": "NeuUser123!"
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 201)
@@ -48,7 +48,7 @@ class AccountsIntegrationTests(APITestCase):
             "email": "fail@example.com",
             "username": "failuser",
             "password": "pw1",
-            "password_confirm": "pw2"
+            "confirmed_password": "pw2"
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
@@ -60,7 +60,7 @@ class AccountsIntegrationTests(APITestCase):
             "email": "user@test.de",  # exists already
             "username": "anotheruser",
             "password": "Password123!",
-            "password_confirm": "Password123!"
+            "confirmed_password": "Password123!"
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)

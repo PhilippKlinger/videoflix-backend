@@ -1,14 +1,17 @@
+from os import access
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
-from rest_framework.authtoken.models import Token
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.conf import settings
+
 from accounts_app.models import CustomUser
 from .serializers import (
+    CustomLoginCookieSerializer,
     UserRegistrationSerializer,
-    LoginSerializer,
     PasswordResetRequestSerializer,
     PasswordResetSerializer,
 )
@@ -58,19 +61,75 @@ class ActivateAccountView(views.APIView):
             return redirect(f"{settings.FRONTEND_URL}/login?status=invalid")
 
 
-class LoginUserView(views.APIView):
+class CustomLoginCookieView(views.APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        serializer = LoginSerializer(data=request.data, context={"request": request})
+        serializer = CustomLoginCookieSerializer(
+            data=request.data, context={"request": request}
+        )
         if serializer.is_valid():
             user = serializer.validated_data["user"]
-            token, created = Token.objects.get_or_create(user=user)
-            return Response(
-                {"token": token.key, "user_id": user.pk, "email": user.email},
-                status=status.HTTP_200_OK,
+            refresh = RefreshToken.for_user(user)
+
+            response = Response(
+                {"detail": "login successfully"}, status=status.HTTP_200_OK
             )
+
+            response.set_cookie(
+                key="access_token",
+                value=str(refresh.access_token),
+                httponly=True,
+                secure=True,
+                samesite="Lax",
+            )
+            response.set_cookie(
+                key="refresh_token",
+                value=str(refresh),
+                httponly=True,
+                secure=True,
+                samesite="Lax",
+            )
+            return response
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomLoginCookieRefreshView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        refresh_token = request.COOKIES.get("refresh_token")
+
+        if not refresh_token:
+            return Response(
+                {"detail": "No refresh token provided."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            access_token = str(refresh.access_token)
+
+            response = Response(
+                {"message": "access token refreshed"}, status=status.HTTP_200_OK
+            )
+
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=True,
+                samesite="Lax",
+            )
+
+            return response
+
+        except TokenError:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
 
 class RequestNewActivationLinkView(views.APIView):

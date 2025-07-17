@@ -3,6 +3,7 @@ import subprocess
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from video_app.models import Video, VideoResolution
+from django.core.cache import cache
 from .utils import (
     get_base_name_and_extension,
     build_output_filename,
@@ -92,6 +93,7 @@ def convert_video(video_id):
                 logger.error(f"Failed to convert video to {res_label}: {e}")
                 set_video_failed(video_instance)
                 return
+        update_video_cache()
     except Exception as e:
         logger.error(f"General error in convert_video: {e}")
         if video_instance:
@@ -115,3 +117,8 @@ def update_video_progress(video_instance, done, total, current_res):
     video_instance.current_resolution = current_res
     video_instance.status = "ready"
     video_instance.save()
+
+
+def update_video_cache():
+    cache_key = "all_videos"
+    cache.delete(cache_key)

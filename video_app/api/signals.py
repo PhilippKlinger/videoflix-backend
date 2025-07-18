@@ -34,6 +34,6 @@ def video_pre_delete(sender, instance, **kwargs):
         if res.converted_file and default_storage.exists(res.converted_file.name):
             default_storage.delete(res.converted_file.name)
             logger.info(f"Converted video file {res.converted_file.name} deleted from storage.")
-    if instance.thumbnail and default_storage.exists(instance.thumbnail.name):
-        default_storage.delete(instance.thumbnail.name)
-        logger.info(f"Thumbnail {instance.thumbnail.name} deleted from storage.")
+    if instance.thumbnail_url and default_storage.exists(instance.thumbnail_url.name):
+        default_storage.delete(instance.thumbnail_url.name)
+        logger.info(f"Thumbnail {instance.thumbnail_url.name} deleted from storage.")

@@ -31,7 +31,7 @@ class Video(models.Model):
     genre = models.CharField(max_length=100, choices=GENRE_CHOICES, default=GENRE_CHOICES[0][0])
     category = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default=CATEGORY_CHOICES[0][0])
     video_file = models.FileField(upload_to='videos', blank=True, null=True)
-    thumbnail = models.ImageField(upload_to='thumbnails/', blank=True, null=True)
+    thumbnail_url = models.ImageField(upload_to='thumbnails/', blank=True, null=True)
     conversion_progress = models.IntegerField(default=0)
     current_resolution = models.CharField(max_length=10, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')

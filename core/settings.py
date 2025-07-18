@@ -1,3 +1,4 @@
+from datetime import timedelta
 import os
 from pathlib import Path
 import environ
@@ -217,4 +218,21 @@ LOGGING = {
         "handlers": ["console"],
         "level": "INFO",
     },
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=150),       # Access Token gültig für 15 Min
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),          # Refresh Token gültig für 7 Tage
+    'ROTATE_REFRESH_TOKENS': True,                        # Erzeugt neuen Refresh-Token bei jedem Refresh
+    'BLACKLIST_AFTER_ROTATION': True,                     # Markiert alten Refresh-Token als ungültig
+    'UPDATE_LAST_LOGIN': True,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),                     # Nur relevant bei Bearer-Auth
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=15),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
 }

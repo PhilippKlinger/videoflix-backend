@@ -1,5 +1,7 @@
 import logging
+import os
 import subprocess
+from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from video_app.models import Video, VideoResolution
@@ -7,14 +9,14 @@ from django.core.cache import cache
 from .utils import (
     get_base_name_and_extension,
     build_output_filename,
+    get_ffmpeg_hls_command,
     is_valid_video_extension,
     get_ffmpeg_thumbnail_command,
-    get_ffmpeg_convert_command,
 )
 
 logger = logging.getLogger(__name__)
 
-RESOLUTIONS = [("120p", 120), ("360p", 360), ("720p", 720), ("1080p", 1080)]
+RESOLUTIONS = [("360p", 360), ("480p", 480), ("720p", 720), ("1080p", 1080)]
 
 
 def create_thumbnail(video_id):
@@ -39,7 +41,7 @@ def create_thumbnail(video_id):
 
         subprocess.run(command, check=True)
         with open(output_path, "rb") as f:
-            video_instance.thumbnail.save(
+            video_instance.thumbnail_url.save(
                 output_filename, ContentFile(f.read()), save=True
             )
         logger.info(f"Thumbnail created and saved to {output_filename}")
@@ -61,43 +63,84 @@ def convert_video(video_id):
     """
     Convert the original video to multiple resolutions and save each result.
     """
-    video_instance = None
-    try:
-        video_instance = Video.objects.get(id=video_id)
-        input_file = video_instance.video_file
-        base_name, extension = get_base_name_and_extension(input_file.name)
-        if not is_valid_video_extension(extension):
-            logger.error("Unsupported video file format.")
+    video_instance = Video.objects.get(id=video_id)
+    input_file = video_instance.video_file
+    base_name, extension = get_base_name_and_extension(input_file.name)
+    if not is_valid_video_extension(extension):
+        set_video_failed(video_instance)
+        return
+
+    output_base_dir = os.path.join(settings.MEDIA_ROOT, "hls", base_name)
+    os.makedirs(output_base_dir, exist_ok=True)
+
+    total_resolutions = len(RESOLUTIONS)
+    for index, (res_label, res_height) in enumerate(RESOLUTIONS):
+        out_dir = os.path.join(output_base_dir, res_label)
+        os.makedirs(out_dir, exist_ok=True)
+        command, playlist_path = get_ffmpeg_hls_command(
+            default_storage.path(input_file.name), out_dir, base_name, res_height
+        )
+        try:
+            subprocess.run(command, check=True)
+            # Speichere als "converted_file" den relativen Pfad zu index.m3u8
+            rel_playlist_path = os.path.relpath(
+                os.path.join(out_dir, "index.m3u8"), settings.MEDIA_ROOT
+            )
+            VideoResolution.objects.create(
+                original_video=video_instance,
+                resolution=res_label,
+                converted_file=rel_playlist_path,
+            )
+            update_video_progress(
+                video_instance, index + 1, total_resolutions, res_label
+            )
+        except Exception as e:
             set_video_failed(video_instance)
             return
+    update_video_cache()
 
-        total_resolutions = len(RESOLUTIONS)
-        for index, (res_label, res_height) in enumerate(RESOLUTIONS):
-            output_filename = build_output_filename(base_name, res_label, extension)
-            input_path = default_storage.path(input_file.name)
-            output_path = default_storage.path(output_filename)
-            command = get_ffmpeg_convert_command(input_path, output_path, res_height)
 
-            try:
-                subprocess.run(command, check=True)
-                VideoResolution.objects.create(
-                    original_video=video_instance,
-                    resolution=res_label,
-                    converted_file=output_filename,
-                )
-                update_video_progress(
-                    video_instance, index + 1, total_resolutions, res_label
-                )
-                logger.info(f"Video converted and saved to {output_path}")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to convert video to {res_label}: {e}")
-                set_video_failed(video_instance)
-                return
-        update_video_cache()
-    except Exception as e:
-        logger.error(f"General error in convert_video: {e}")
-        if video_instance:
-            set_video_failed(video_instance)
+# def convert_video(video_id):
+#     """
+#     Convert the original video to multiple resolutions and save each result.
+#     """
+#     video_instance = None
+#     try:
+#         video_instance = Video.objects.get(id=video_id)
+#         input_file = video_instance.video_file
+#         base_name, extension = get_base_name_and_extension(input_file.name)
+#         if not is_valid_video_extension(extension):
+#             logger.error("Unsupported video file format.")
+#             set_video_failed(video_instance)
+#             return
+
+#         total_resolutions = len(RESOLUTIONS)
+#         for index, (res_label, res_height) in enumerate(RESOLUTIONS):
+#             output_filename = build_output_filename(base_name, res_label, extension)
+#             input_path = default_storage.path(input_file.name)
+#             output_path = default_storage.path(output_filename)
+#             command = get_ffmpeg_convert_command(input_path, output_path, res_height)
+
+#             try:
+#                 subprocess.run(command, check=True)
+#                 VideoResolution.objects.create(
+#                     original_video=video_instance,
+#                     resolution=res_label,
+#                     converted_file=output_filename,
+#                 )
+#                 update_video_progress(
+#                     video_instance, index + 1, total_resolutions, res_label
+#                 )
+#                 logger.info(f"Video converted and saved to {output_path}")
+#             except subprocess.CalledProcessError as e:
+#                 logger.error(f"Failed to convert video to {res_label}: {e}")
+#                 set_video_failed(video_instance)
+#                 return
+#         update_video_cache()
+#     except Exception as e:
+#         logger.error(f"General error in convert_video: {e}")
+#         if video_instance:
+#             set_video_failed(video_instance)
 
 
 def set_video_failed(video_instance):

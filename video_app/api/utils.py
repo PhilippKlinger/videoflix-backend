@@ -48,10 +48,12 @@ def get_ffmpeg_thumbnail_command(input_path, output_path):
     ]
 
 
-def get_ffmpeg_convert_command(input_path, output_path, height):
+def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
     """
-    Return the ffmpeg command for converting a video to a given height.
+    FFmpeg-Command, um HLS zu erzeugen. output_dir MUSS existieren!
     """
+    playlist_path = os.path.join(output_dir, "index.m3u8")
+    segment_path = os.path.join(output_dir, "index%03d.ts")
     return [
         "ffmpeg",
         "-i",
@@ -65,6 +67,38 @@ def get_ffmpeg_convert_command(input_path, output_path, height):
         "-crf",
         "32",
         "-c:a",
-        "copy",
-        output_path,
-    ]
+        "aac",
+        "-b:a",
+        "128k",
+        "-hls_time",
+        "8",
+        "-hls_list_size",
+        "0",
+        "-hls_segment_filename",
+        segment_path,
+        "-f",
+        "hls",
+        playlist_path,
+    ], playlist_path
+
+
+# def get_ffmpeg_convert_command(input_path, output_path, height):
+#     """
+#     Return the ffmpeg command for converting a video to a given height.
+#     """
+#     return [
+#         "ffmpeg",
+#         "-i",
+#         input_path,
+#         "-vf",
+#         f"scale=-2:{height}",
+#         "-c:v",
+#         "libx264",
+#         "-preset",
+#         "ultrafast",
+#         "-crf",
+#         "32",
+#         "-c:a",
+#         "copy",
+#         output_path,
+#     ]

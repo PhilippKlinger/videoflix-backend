@@ -1,3 +1,6 @@
+import os
+from django.conf import settings
+from django.http import FileResponse, Http404
 from django.shortcuts import render, get_object_or_404
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -54,7 +57,7 @@ class VideoListView(views.APIView):
         if cached_videos is not None:
             return Response(cached_videos)
         videos = Video.objects.all().order_by('-uploaded_at')
-        serializer = VideoSerializer(videos, many=True)
+        serializer = VideoSerializer(videos, many=True, context={'request': request})
         serialized_data = serializer.data
         cache.set(cache_key, serialized_data, timeout=300)
         return Response(serialized_data)
@@ -65,20 +68,60 @@ class VideoDetailView(views.APIView):
 
     def get(self, request, pk):
         video = get_object_or_404(Video, pk=pk)
-        serializer = VideoSerializer(video)
+        serializer = VideoSerializer(video, context={'request': request})
         return Response(serializer.data)
 
     def patch(self, request, pk):
         video = get_object_or_404(Video, pk=pk)
 
-        serializer = VideoSerializer(video, data=request.data, partial=True)
+        serializer = VideoSerializer(video, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             cache.delete("all_videos")
             cache.set(
                 "all_videos",
-                VideoSerializer(Video.objects.all(), many=True).data,
+                VideoSerializer(Video.objects.all(), many=True, context={'request': request}).data,
                 timeout=300,
             )
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class VideoHLSServeView(views.APIView):
+    permission_classes = []  # oder IsAuthenticated, je nach Policy
+
+    def get(self, request, video_id, resolution, filename):
+        # Suche das Video
+        video = Video.objects.filter(id=video_id).first()
+        if not video:
+            raise Http404("Video not found")
+
+        # Suche die VideoResolution für diese Auflösung
+        video_res = video.resolutions.filter(resolution=resolution).first()
+        if not video_res:
+            raise Http404("Resolution not found")
+
+        # Hole das Verzeichnis, in dem die index.m3u8 liegt
+        # Pfadbeispiel: "/media/hls/videos/skyscraper/480p/index.m3u8"
+        m3u8_path = video_res.converted_file.path  # das ist das FileField!
+        base_dir = os.path.dirname(m3u8_path)
+
+        # Finaler Pfad zur gewünschten Datei (index.m3u8 oder indexXXX.ts)
+        file_path = os.path.join(base_dir, filename)
+
+        # Absicherung gegen Path Traversal
+        file_path = os.path.abspath(file_path)
+        if not file_path.startswith(os.path.abspath(settings.MEDIA_ROOT)):
+            raise Http404("Invalid path")
+
+        if not os.path.exists(file_path):
+            raise Http404("File not found")
+
+        # Content-Type bestimmen
+        if filename.endswith('.m3u8'):
+            content_type = 'application/vnd.apple.mpegurl'
+        elif filename.endswith('.ts'):
+            content_type = 'video/mp2t'
+        else:
+            content_type = 'application/octet-stream'
+
+        return FileResponse(open(file_path, 'rb'), content_type=content_type)

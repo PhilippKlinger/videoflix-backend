@@ -16,10 +16,9 @@ class VideoSerializer(serializers.ModelSerializer):
         model = Video
         fields = [
             "id",
-            "uploaded_at",
+            "created_at",
             "title",
             "description",
-            "genre",
             "category",
             "video_file",
             "thumbnail_url",

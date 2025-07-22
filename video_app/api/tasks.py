@@ -94,10 +94,11 @@ def convert_video(video_id):
             update_video_progress(
                 video_instance, index + 1, total_resolutions, res_label
             )
+            update_video_cache()
         except Exception as e:
             set_video_failed(video_instance)
             return
-    update_video_cache()
+    
 
 
 # def convert_video(video_id):

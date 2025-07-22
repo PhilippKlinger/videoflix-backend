@@ -3,6 +3,7 @@ from .views import (
     CustomLoginCookieView,
     CustomLoginCookieRefreshView,
     HardDeleteAccountView,
+    LogoutView,
     RegisterUserView,
     ActivateAccountView,
     RequestNewActivationLinkView,
@@ -23,8 +24,9 @@ urlpatterns = [
     path('delete-account/', SoftDeleteAccountView.as_view(), name='soft-delete-account'),
     path('admin/delete-account/<int:pk>/', HardDeleteAccountView.as_view(), name='hard-delete-account'),
     path('admin/restore-account/<int:pk>/', RestoreAccountView.as_view(), name='restore-account'),
+    path('logout/', LogoutView.as_view(), name='logout-user'),
         
     #------------------------------------------password reset---------------------------------------------------#
-    path('password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
-    path('password-reset-confirm/<str:activation_code>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('password_reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
+    path('password_confirm/<str:uid>/<str:token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 ]

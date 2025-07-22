@@ -4,19 +4,15 @@ from django.conf import settings
 
 class Video(models.Model):
     
-    GENRE_CHOICES = [
+    CATEGORY_CHOICES = [
         ('Action', 'Action'),
         ('Comedy', 'Comedy'),
         ('Crime', 'Crime'),
         ('Documentary', 'Documentary'),
         ('Mystery', 'Mystery'),
         ('Romance', 'Romance'),
-        ('Sports', 'Sports')
-    ]
-    
-    CATEGORY_CHOICES = [
-        ('Movie', 'Movie'),
-        ('TV-Show', 'TV-Show')
+        ('Sports', 'Sports'),
+        ('Action', 'Action'),
     ]
     
     STATUS_CHOICES = [
@@ -25,10 +21,9 @@ class Video(models.Model):
         ('failed', 'Failed'),
 ]
     
-    uploaded_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=150)
     description = models.CharField(max_length=500)
-    genre = models.CharField(max_length=100, choices=GENRE_CHOICES, default=GENRE_CHOICES[0][0])
     category = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default=CATEGORY_CHOICES[0][0])
     video_file = models.FileField(upload_to='videos', blank=True, null=True)
     thumbnail_url = models.ImageField(upload_to='thumbnails/', blank=True, null=True)

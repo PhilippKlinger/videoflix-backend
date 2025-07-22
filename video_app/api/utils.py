@@ -1,6 +1,5 @@
 import os
 
-
 def get_base_name_and_extension(file_name):
     """
     Return base name and file extension for a given filename.
@@ -43,7 +42,7 @@ def get_ffmpeg_thumbnail_command(input_path, output_path):
         "-q:v",
         "2",
         "-s",
-        "1920x1440",
+        "1920x1080",
         output_path,
     ]
 
@@ -71,7 +70,7 @@ def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
         "-b:a",
         "128k",
         "-hls_time",
-        "8",
+        "16",
         "-hls_list_size",
         "0",
         "-hls_segment_filename",

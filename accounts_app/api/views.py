@@ -1,3 +1,4 @@
+import base64
 from os import access
 from rest_framework import views, status
 from rest_framework.response import Response
@@ -51,14 +52,14 @@ class ActivateAccountView(views.APIView):
                 activation_code=activation_code, is_active=False
             )
             if timezone.now() > user.activation_code_expiry:
-                return redirect(f"{settings.FRONTEND_URL}/login?status=expired")
+                return redirect(f"{settings.FRONTEND_URL}?status=expired")
             user.is_active = True
             user.activation_code = None
             user.activation_code_expiry = None
             user.save()
-            return redirect(f"{settings.FRONTEND_URL}/login?status=activated")
+            return redirect(f"{settings.FRONTEND_URL}/pages/auth/login.html")
         except CustomUser.DoesNotExist:
-            return redirect(f"{settings.FRONTEND_URL}/login?status=invalid")
+            return redirect(f"{settings.FRONTEND_URL}?status=invalid")
 
 
 class CustomLoginCookieView(views.APIView):
@@ -187,16 +188,22 @@ class PasswordResetRequestView(views.APIView):
 class PasswordResetConfirmView(views.APIView):
     permission_classes = [AllowAny]
 
-    def post(self, request, activation_code):
+    def post(self, request, uid, token):
         try:
+            # UID zurückdekodieren
+            uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
             user = CustomUser.objects.get(
-                activation_code=activation_code, is_active=True
+                pk=uid_decoded, activation_code=token, is_active=True
             )
-            if timezone.now() > user.activation_code_expiry:
+            if (
+                not user.activation_code_expiry
+                or timezone.now() > user.activation_code_expiry
+            ):
                 return Response(
                     {"detail": "Reset link expired."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
             serializer = PasswordResetSerializer(data=request.data)
             if serializer.is_valid():
                 user.set_password(serializer.validated_data["new_password"])
@@ -207,7 +214,7 @@ class PasswordResetConfirmView(views.APIView):
                     {"detail": "Password reset successful."}, status=status.HTTP_200_OK
                 )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        except CustomUser.DoesNotExist:
+        except Exception:
             return Response(
                 {"detail": "Invalid or expired reset link."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -268,3 +275,12 @@ class RestoreAccountView(views.APIView):
                 {"detail": "User not found or not deleted."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+class LogoutView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        response = Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
+        response.delete_cookie("access_token")
+        response.delete_cookie("refresh_token")
+        return response 

@@ -12,7 +12,7 @@ class VideoResolutionInline(admin.TabularInline):
 @admin.register(Video)
 class VideoAdmin(ImportExportModelAdmin):
     inlines = [VideoResolutionInline]
-    list_display = ("title", "description", "genre", "uploaded_at")
+    list_display = ("title", "description", "category", "created_at")
     search_fields = ("title", "description")
 
 

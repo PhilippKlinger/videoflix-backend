@@ -56,7 +56,7 @@ class VideoListView(views.APIView):
         cached_videos = cache.get(cache_key)
         if cached_videos is not None:
             return Response(cached_videos)
-        videos = Video.objects.all().order_by('-uploaded_at')
+        videos = Video.objects.all().order_by('-created_at')
         serializer = VideoSerializer(videos, many=True, context={'request': request})
         serialized_data = serializer.data
         cache.set(cache_key, serialized_data, timeout=300)

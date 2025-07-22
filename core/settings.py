@@ -34,7 +34,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-FRONTEND_URL = "http://localhost:5500/"
+FRONTEND_URL = "http://localhost:5500"
 
 INTERNAL_IPS = ["127.0.0.1"]
 
@@ -113,7 +113,9 @@ IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 
 
 STATIC_URL = "/static/"
-STATIC_ROOT = os.path.join(BASE_DIR, "static")
+STATICFILES_DIRS = [os.path.join(BASE_DIR, "static")]
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
 
 # Media files
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
@@ -221,7 +223,7 @@ LOGGING = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=150),       # Access Token gültig für 15 Min
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),       # Access Token gültig für 15 Min
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),          # Refresh Token gültig für 7 Tage
     'ROTATE_REFRESH_TOKENS': True,                        # Erzeugt neuen Refresh-Token bei jedem Refresh
     'BLACKLIST_AFTER_ROTATION': True,                     # Markiert alten Refresh-Token als ungültig

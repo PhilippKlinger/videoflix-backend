@@ -223,7 +223,7 @@ LOGGING = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),       # Access Token gültig für 15 Min
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),       # Access Token gültig für 60 Min
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),          # Refresh Token gültig für 7 Tage
     'ROTATE_REFRESH_TOKENS': True,                        # Erzeugt neuen Refresh-Token bei jedem Refresh
     'BLACKLIST_AFTER_ROTATION': True,                     # Markiert alten Refresh-Token als ungültig

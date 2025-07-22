@@ -174,7 +174,6 @@ class PasswordResetRequestView(views.APIView):
                 user.save()
                 send_password_reset_email(user, request)
             except CustomUser.DoesNotExist:
-                # Immer gleiche Response zurückgeben!
                 pass
             return Response(
                 {
@@ -190,7 +189,6 @@ class PasswordResetConfirmView(views.APIView):
 
     def post(self, request, uid, token):
         try:
-            # UID zurückdekodieren
             uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
             user = CustomUser.objects.get(
                 pk=uid_decoded, activation_code=token, is_active=True
@@ -276,11 +274,14 @@ class RestoreAccountView(views.APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+
 class LogoutView(views.APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        response = Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
+        response = Response(
+            {"detail": "Logged out successfully."}, status=status.HTTP_200_OK
+        )
         response.delete_cookie("access_token")
         response.delete_cookie("refresh_token")
-        return response 
+        return response

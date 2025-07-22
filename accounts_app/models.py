@@ -50,5 +50,5 @@ class CustomUser(AbstractUser):
     def generate_activation_code(self):
         self.activation_code = str(uuid.uuid4())
         self.activation_code_expiry = timezone.now() + timedelta(
-            minutes=1
-        )  # Zeit für prod hochsetzen
+            minutes=15
+        )

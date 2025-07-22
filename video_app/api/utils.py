@@ -79,25 +79,3 @@ def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
         "hls",
         playlist_path,
     ], playlist_path
-
-
-# def get_ffmpeg_convert_command(input_path, output_path, height):
-#     """
-#     Return the ffmpeg command for converting a video to a given height.
-#     """
-#     return [
-#         "ffmpeg",
-#         "-i",
-#         input_path,
-#         "-vf",
-#         f"scale=-2:{height}",
-#         "-c:v",
-#         "libx264",
-#         "-preset",
-#         "ultrafast",
-#         "-crf",
-#         "32",
-#         "-c:a",
-#         "copy",
-#         output_path,
-#     ]

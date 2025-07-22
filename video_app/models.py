@@ -12,7 +12,6 @@ class Video(models.Model):
         ('Mystery', 'Mystery'),
         ('Romance', 'Romance'),
         ('Sports', 'Sports'),
-        ('Action', 'Action'),
     ]
     
     STATUS_CHOICES = [

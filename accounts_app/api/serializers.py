@@ -29,7 +29,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop("confirmed_password", None)
-        # User ist zunächst inaktiv (Aktivierung per Email)
         if "username" not in validated_data or not validated_data["username"]:
             validated_data["username"] = (
                 validated_data["email"].split("@")[0] + uuid.uuid4().hex[:6]
@@ -63,7 +62,7 @@ class CustomLoginCookieSerializer(TokenObtainPairSerializer):
             
         self.user = user
         data = super().validate(attrs)
-        data["user"] = user  # <- diese Zeile ist entscheidend
+        data["user"] = user
         return data
 
 

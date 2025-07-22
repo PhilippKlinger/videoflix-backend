@@ -3,7 +3,6 @@ import uuid
 import os
 from datetime import timedelta
 from django.utils import timezone
-from django.core.mail import send_mail
 from django.urls import reverse
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -49,7 +48,7 @@ def send_password_reset_email(user, request):
         "button_text": "Reset password",
         "title": "Reset your Password",
         "message": "Please click on the following link to reset your password:",
-        "hint": "Please note that for security reasons, this link is only valid for 24 hours.",
+        "hint": "Please note that for security reasons, this link is only valid for 1 hour.",
         "advice": "If you did not request a password reset, please ignore this email",
     }
     html_content = render_to_string("emails/base_email.html", context)

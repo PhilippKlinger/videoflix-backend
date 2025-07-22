@@ -1,8 +1,8 @@
+import base64
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
 from accounts_app.models import CustomUser
-from rest_framework.authtoken.models import Token
 from django.utils import timezone
 
 class AccountsIntegrationTests(APITestCase):
@@ -11,13 +11,11 @@ class AccountsIntegrationTests(APITestCase):
         self.admin = CustomUser.objects.create_user(
             username="admin", email="admin@test.de", password="Admin123!", is_staff=True, is_active=True
         )
-        self.admin_token = Token.objects.create(user=self.admin)
 
         # Create regular user (activated)
         self.user = CustomUser.objects.create_user(
             username="testuser", email="user@test.de", password="User123!", is_active=True
         )
-        self.user_token = Token.objects.create(user=self.user)
 
         # Create inactive user (not activated yet)
         self.inactive_user = CustomUser.objects.create_user(
@@ -29,18 +27,24 @@ class AccountsIntegrationTests(APITestCase):
             username="deleted", email="deleted@test.de", password="Deleted123!", is_active=False, is_soft_deleted=True
         )
 
-   # --- REGISTRATION ---
+    def authenticate_with_cookies(self, email, password):
+        response = self.client.post("/api/login/", {"email": email, "password": password})
+        self.assertEqual(response.status_code, 200)
+        self.client.cookies["access_token"] = response.cookies.get("access_token").value
+        self.client.cookies["refresh_token"] = response.cookies.get("refresh_token").value
+
+    # --- REGISTRATION ---
     def test_registration_success(self):
         url = "/api/register/"
         data = {
             "email": "neu@example.com",
-            "username": "neuuser",
             "password": "NeuUser123!",
             "confirmed_password": "NeuUser123!"
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(CustomUser.objects.filter(username="neuuser").exists())
+        self.assertTrue(CustomUser.objects.filter(email="neu@example.com").exists())
+
 
     def test_registration_passwords_do_not_match(self):
         url = "/api/register/"
@@ -57,7 +61,7 @@ class AccountsIntegrationTests(APITestCase):
     def test_registration_duplicate_email(self):
         url = "/api/register/"
         data = {
-            "email": "user@test.de",  # exists already
+            "email": "user@test.de",
             "username": "anotheruser",
             "password": "Password123!",
             "confirmed_password": "Password123!"
@@ -75,7 +79,7 @@ class AccountsIntegrationTests(APITestCase):
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("token", response.data)
+        self.assertIn("access_token", response.cookies)
 
     def test_login_wrong_password(self):
         url = "/api/login/"
@@ -120,7 +124,6 @@ class AccountsIntegrationTests(APITestCase):
         user.save()
         url = f"/api/activate/{user.activation_code}/"
         response = self.client.get(url)
-       
         self.assertIn(response.status_code, [302, 301])
         user.refresh_from_db()
         self.assertTrue(user.is_active)
@@ -146,7 +149,7 @@ class AccountsIntegrationTests(APITestCase):
 
     # --- REQUEST NEW ACTIVATION LINK ---
     def test_request_new_activation_link_success(self):
-        user = CustomUser.objects.create_user(
+        CustomUser.objects.create_user(
             username="newactivation", email="newactivation@test.de", password="pw", is_active=False
         )
         url = "/api/request-new-activation-link/"
@@ -159,17 +162,17 @@ class AccountsIntegrationTests(APITestCase):
         url = "/api/request-new-activation-link/"
         data = {"email": "notfound@test.de"}
         response = self.client.post(url, data)
-        self.assertEqual(response.status_code, 200)  
+        self.assertEqual(response.status_code, 200)
 
     # --- PASSWORD RESET ---
     def test_password_reset_request_success(self):
-        url = "/api/password-reset/"
+        url = "/api/password_reset/"
         data = {"email": "user@test.de"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 200)
 
     def test_password_reset_request_nonexistent(self):
-        url = "/api/password-reset/"
+        url = "/api/password_reset/"
         data = {"email": "idontexist@test.de"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 200)
@@ -182,7 +185,8 @@ class AccountsIntegrationTests(APITestCase):
         user.activation_code = "resetcode"
         user.activation_code_expiry = timezone.now() + timezone.timedelta(hours=1)
         user.save()
-        url = f"/api/password-reset-confirm/{user.activation_code}/"
+        uid = base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+        url = f"/api/password_confirm/{uid}/resetcode/"
         data = {"new_password": "NewPw123!", "confirm_password": "NewPw123!"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 200)
@@ -197,21 +201,22 @@ class AccountsIntegrationTests(APITestCase):
         user.activation_code = "expiredpwcode"
         user.activation_code_expiry = timezone.now() - timezone.timedelta(hours=1)
         user.save()
-        url = f"/api/password-reset-confirm/{user.activation_code}/"
+        uid = user.pk
+        url = f"/api/password_confirm/{uid}/expiredpwcode/"
         data = {"new_password": "NewPw123!", "confirm_password": "NewPw123!"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
 
     def test_password_reset_confirm_invalid_code(self):
-        url = "/api/password-reset-confirm/doesnotexist/"
+        url = "/api/password_confirm/9999/invalidcode/"
         data = {"new_password": "NewPw123!", "confirm_password": "NewPw123!"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
 
     # --- SOFT DELETE ---
     def test_soft_delete_success(self):
+        self.authenticate_with_cookies("user@test.de", "User123!")
         url = "/api/delete-account/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.user_token.key)
         data = {"confirm": True}
         response = self.client.delete(url, data)
         self.assertEqual(response.status_code, 204)
@@ -226,8 +231,8 @@ class AccountsIntegrationTests(APITestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_soft_delete_no_confirm(self):
+        self.authenticate_with_cookies("user@test.de", "User123!")
         url = "/api/delete-account/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.user_token.key)
         data = {}
         response = self.client.delete(url, data)
         self.assertEqual(response.status_code, 400)
@@ -236,15 +241,15 @@ class AccountsIntegrationTests(APITestCase):
 
     # --- HARD DELETE (ADMIN) ---
     def test_hard_delete_success(self):
+        self.authenticate_with_cookies("admin@test.de", "Admin123!")
         url = f"/api/admin/delete-account/{self.deleted_user.pk}/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.admin_token.key)
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 204)
         self.assertFalse(CustomUser.objects.filter(pk=self.deleted_user.pk).exists())
 
     def test_hard_delete_not_admin(self):
+        self.authenticate_with_cookies("user@test.de", "User123!")
         url = f"/api/admin/delete-account/{self.deleted_user.pk}/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.user_token.key)
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 403)
 
@@ -254,15 +259,15 @@ class AccountsIntegrationTests(APITestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_hard_delete_invalid_user(self):
+        self.authenticate_with_cookies("admin@test.de", "Admin123!")
         url = "/api/admin/delete-account/99999/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.admin_token.key)
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 404)
 
     # --- RESTORE ACCOUNT (ADMIN) ---
     def test_restore_account_success(self):
+        self.authenticate_with_cookies("admin@test.de", "Admin123!")
         url = f"/api/admin/restore-account/{self.deleted_user.pk}/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.admin_token.key)
         response = self.client.post(url)
         self.assertEqual(response.status_code, 200)
         self.deleted_user.refresh_from_db()
@@ -270,13 +275,13 @@ class AccountsIntegrationTests(APITestCase):
         self.assertTrue(self.deleted_user.is_active)
 
     def test_restore_account_not_admin(self):
+        self.authenticate_with_cookies("user@test.de", "User123!")
         url = f"/api/admin/restore-account/{self.deleted_user.pk}/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.user_token.key)
         response = self.client.post(url)
         self.assertEqual(response.status_code, 403)
 
     def test_restore_account_invalid_user(self):
+        self.authenticate_with_cookies("admin@test.de", "Admin123!")
         url = f"/api/admin/restore-account/99999/"
-        self.client.credentials(HTTP_AUTHORIZATION="Token " + self.admin_token.key)
         response = self.client.post(url)
         self.assertEqual(response.status_code, 404)

@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from video_app.models import Video, VideoResolution
 
-
 class VideoResolutionSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoResolution
@@ -34,11 +33,9 @@ class VideoSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        # Wenn PATCH (partial update), keine Pflichtfeldprüfung
         if getattr(self, "partial", False):
             return data
-        # Pflichtfelder prüfen (POST/PUT)
-        required_fields = ["title", "description", "genre", "category", "video_file"]
+        required_fields = ["title", "description", "category", "video_file"]
         errors = {}
         for field in required_fields:
             if field not in data or not data.get(field):
@@ -54,6 +51,5 @@ class VideoSerializer(serializers.ModelSerializer):
             if request is not None:
                 return request.build_absolute_uri(url)
             else:
-                # Fallback, wenn kein Request-Objekt vorhanden ist
                 return url
         return None

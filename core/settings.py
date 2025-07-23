@@ -4,41 +4,33 @@ from pathlib import Path
 import environ
 
 
+# BASE_DIR
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 # Initialize environ
 env = environ.Env()
-environ.Env.read_env(env_file=str(".env"))
+environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("SECRET_KEY")
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
-
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool("DEBUG")
 
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 
-ALLOWED_HOSTS = [
-    "localhost",
-    "127.0.0.1",
-]
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5500",
-    "http://127.0.0.1:5500",
-]
+# CORS
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
 CORS_ALLOW_CREDENTIALS = True
 
-FRONTEND_URL = "http://localhost:5500"
+# CSRF
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
 
-INTERNAL_IPS = ["127.0.0.1"]
+# FRONTEND_URL
+FRONTEND_URL = env("FRONTEND_URL")
 
-# Application definition
+# INTERNAL_IPS (z.B. für Django Debug Toolbar)
+INTERNAL_IPS = env.list("INTERNAL_IPS")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -125,7 +117,16 @@ MEDIA_URL = "/media/"
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 
-DATABASES = {"default": env.db()}
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("DB_NAME"),
+        "USER": env("DB_USER"),
+        "PASSWORD": env("DB_PASSWORD"),
+        "HOST": env("DB_HOST"),
+        "PORT": env("DB_PORT"),
+    }
+}
 
 
 # Password validation
@@ -164,41 +165,34 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_HOST = env("REDIS_HOST")
+REDIS_PORT = env.int("REDIS_PORT")
+REDIS_PASSWORD = env("REDIS_PASSWORD")
+REDIS_DB_RQ = env.int("REDIS_DB_RQ")
+REDIS_DB_CACHE = env.int("REDIS_DB_CACHE")
+REDIS_TIMEOUT = env.int("REDIS_TIMEOUT")
 
 RQ_QUEUES = {
     "default": {
         "HOST": REDIS_HOST,
-        "PORT": 6379,
-        "DB": 0,
-        "PASSWORD": "foobared",
-        "DEFAULT_TIMEOUT": 360,
+        "PORT": REDIS_PORT,
+        "DB": REDIS_DB_RQ,
+        "PASSWORD": REDIS_PASSWORD,
+        "DEFAULT_TIMEOUT": REDIS_TIMEOUT,
     },
-    # 'thumbnails': {
-    #     'HOST': 'localhost',
-    #     'PORT': 6379,
-    #     'DB': 1,
-    #     "PASSWORD": "foobared",
-    #     'DEFAULT_TIMEOUT': 360,
-    # },
 }
-
-RQ_EXCEPTION_HANDLERS = []  # If you need custom exception handlers
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": f"redis://{REDIS_HOST}:6379/1",
+        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB_CACHE}",
         "OPTIONS": {
-            "PASSWORD": "foobared",
+            "PASSWORD": REDIS_PASSWORD,
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
         "KEY_PREFIX": "video_app",
     }
 }
-
-# EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
-# EMAIL_FILE_PATH = 'received_mails'  # Ersetze dies mit einem Pfad auf deinem System
 
 EMAIL_BACKEND = env("EMAIL_BACKEND")
 EMAIL_HOST = env("EMAIL_HOST")
@@ -223,15 +217,15 @@ LOGGING = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),       # Access Token gültig für 60 Min
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),          # Refresh Token gültig für 7 Tage
-    'ROTATE_REFRESH_TOKENS': True,                        # Erzeugt neuen Refresh-Token bei jedem Refresh
-    'BLACKLIST_AFTER_ROTATION': True,                     # Markiert alten Refresh-Token als ungültig
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=25),     
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
 
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
-    'AUTH_HEADER_TYPES': ('Bearer',),                     # Nur relevant bei Bearer-Auth
+    'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 

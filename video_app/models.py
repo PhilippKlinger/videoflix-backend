@@ -44,6 +44,10 @@ class VideoResolution(models.Model):
     
 class VideoProgress(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    video = models.ForeignKey(Video, on_delete=models.CASCADE)
+    video = models.ForeignKey(Video, related_name='progresses', on_delete=models.CASCADE)
     progress_seconds = models.IntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.video.title} ({self.progress_seconds}s)"
+

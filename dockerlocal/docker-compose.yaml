@@ -5,9 +5,9 @@ services:
     ports:
       - 5432:5432
     environment:
-      POSTGRES_DB: videoflix_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ElsuE348Df45gf
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -16,7 +16,8 @@ services:
     container_name: videoflix-dev-redis
     ports:
       - "6379:6379"
-    command: redis-server --requirepass foobared
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+
 
   rqworker:
     build:
@@ -26,14 +27,15 @@ services:
     working_dir: /app
     volumes:
       - ..:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings
+      DB_HOST: postgres
+      REDIS_HOST: redis
     command: >
       sh -c "
         export DJANGO_SETTINGS_MODULE=core.settings &&
         python manage.py rqworker default
       "
-    environment:
-      - DATABASE_URL=postgresql://postgres:ElsuE348Df45gf@postgres:5432/videoflix_db
-      - REDIS_HOST=redis
     depends_on:
       - redis
       - postgres

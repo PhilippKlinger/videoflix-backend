@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from video_app.models import Video, VideoResolution
+from video_app.models import Video, VideoProgress, VideoResolution
+
 
 class VideoResolutionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,6 +11,7 @@ class VideoResolutionSerializer(serializers.ModelSerializer):
 class VideoSerializer(serializers.ModelSerializer):
     resolutions = VideoResolutionSerializer(many=True, read_only=True)
     thumbnail_url = serializers.SerializerMethodField()
+    user_progress = serializers.SerializerMethodField()
 
     class Meta:
         model = Video
@@ -24,6 +26,7 @@ class VideoSerializer(serializers.ModelSerializer):
             "conversion_progress",
             "current_resolution",
             "resolutions",
+            "user_progress",
         ]
 
     def validate_video_file(self, value):
@@ -53,3 +56,13 @@ class VideoSerializer(serializers.ModelSerializer):
             else:
                 return url
         return None
+
+    def get_user_progress(self, obj):
+        request = self.context.get("request", None)
+        if not request or not request.user.is_authenticated:
+            return None
+        try:
+            progress = VideoProgress.objects.get(user=request.user, video=obj)
+            return progress.progress_seconds
+        except VideoProgress.DoesNotExist:
+            return 0

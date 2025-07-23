@@ -115,6 +115,7 @@ GitHub.sublime-settings
 # Docker
 .dockerignore
 # docker-compose.yml
+.docker.env
 
 # Node.js (optional)
 node_modules/

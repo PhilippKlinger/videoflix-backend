@@ -59,7 +59,7 @@ docker-compose up --build
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
 🟢 All migrations, static/media setup, and superuser creation are handled by the entrypoint script.
-´´´
+```
 ---
 
 ## Local Development (advanced, optional)
@@ -101,15 +101,13 @@ You can:
 ---
 
 ## Development Tips
-
+```bash
 **Testing**  
 Run tests inside the running container:
 
-```bash
 docker-compose exec web sh  
 python -m coverage run manage.py test video_app  
 coverage report
-´´´
 
 **Media & Static files**  
 Uploaded videos and static files are persisted in Docker volumes.
@@ -119,7 +117,7 @@ Sensitive settings are loaded from `.env` (see `.env.example` for reference).
 
 **Admin UI**  
 Access Django Admin at [http://localhost:8000/admin/](http://localhost:8000/admin/) (credentials set in `.env`).
-
+```
 ---
 
 ## Example Workflow

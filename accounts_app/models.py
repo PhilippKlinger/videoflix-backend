@@ -1,16 +1,20 @@
-from django.contrib.auth.base_user import BaseUserManager
-from django.db import models
-from django.contrib.auth.models import AbstractUser
 import uuid
-from django.utils import timezone
 from datetime import timedelta
-from django.core.exceptions import ValidationError
 
+from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+from django.utils import timezone
 
 class CustomUserManager(BaseUserManager):
+    """Manager for CustomUser."""
+    
     use_in_migrations = True
 
     def create_user(self, email, password=None, **extra_fields):
+        """
+        Create and save a user with the given email and password.
+        """
         if not email:
             raise ValueError("Users must have an email address")
         email = self.normalize_email(email)
@@ -20,6 +24,9 @@ class CustomUserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password=None, **extra_fields):
+        """
+        Create and save a superuser with the given email and password.
+        """
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
@@ -35,6 +42,18 @@ class CustomUserManager(BaseUserManager):
 
 
 class CustomUser(AbstractUser):
+    """
+    Custom user model for Videoflix authentication.
+
+    Fields:
+        custom: Optional custom data.
+        phone: Optional phone number.
+        email: Email address, unique, used for login.
+        is_active: If the user is active.
+        activation_code: Code for account activation and password reset.
+        activation_code_expiry: Expiry datetime for the activation code.
+        is_soft_deleted: If the account is soft deleted.
+    """
     custom = models.CharField(max_length=500, blank=True, null=True)
     phone = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(unique=True)
@@ -48,7 +67,14 @@ class CustomUser(AbstractUser):
     objects = CustomUserManager()
 
     def generate_activation_code(self):
+        """
+        Generate a new activation code and set expiry (default 15 minutes).
+        """
         self.activation_code = str(uuid.uuid4())
-        self.activation_code_expiry = timezone.now() + timedelta(
-            minutes=15
-        )
+        self.activation_code_expiry = timezone.now() + timedelta(minutes=15)
+
+    def __str__(self):
+        """
+        String representation of the user.
+        """
+        return self.email

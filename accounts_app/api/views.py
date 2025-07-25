@@ -1,13 +1,16 @@
+"""
+Views for authentication, account activation, password reset, and account management.
+"""
+
 import base64
-from os import access
 from rest_framework import views, status
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import redirect
-from django.urls import reverse
 from django.conf import settings
+from django.utils import timezone
 
 from accounts_app.models import CustomUser
 from .serializers import (
@@ -21,10 +24,13 @@ from .utils import (
     send_password_reset_email,
     generate_activation_code,
 )
-from django.utils import timezone
 
 
 class RegisterUserView(views.APIView):
+    """
+    API views for user registration.
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -44,6 +50,10 @@ class RegisterUserView(views.APIView):
 
 
 class ActivateAccountView(views.APIView):
+    """
+    API view for activating a user account via activation code.
+    """
+
     permission_classes = [AllowAny]
 
     def get(self, request, activation_code):
@@ -63,6 +73,10 @@ class ActivateAccountView(views.APIView):
 
 
 class CustomLoginCookieView(views.APIView):
+    """
+    API view for user login using email and password, sets JWT tokens as cookies.
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -97,6 +111,10 @@ class CustomLoginCookieView(views.APIView):
 
 
 class CustomLoginCookieRefreshView(views.APIView):
+    """
+    API view to refresh access token using a refresh token from cookies.
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -134,6 +152,10 @@ class CustomLoginCookieRefreshView(views.APIView):
 
 
 class RequestNewActivationLinkView(views.APIView):
+    """
+    API view to request a new activation link for inactive accounts.
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -160,6 +182,10 @@ class RequestNewActivationLinkView(views.APIView):
 
 
 class PasswordResetRequestView(views.APIView):
+    """
+    API view to request a password reset link.
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -185,6 +211,10 @@ class PasswordResetRequestView(views.APIView):
 
 
 class PasswordResetConfirmView(views.APIView):
+    """
+    API view to confirm password reset with UID and token.
+    """
+
     permission_classes = [AllowAny]
 
     def post(self, request, uid, token):
@@ -220,6 +250,10 @@ class PasswordResetConfirmView(views.APIView):
 
 
 class SoftDeleteAccountView(views.APIView):
+    """
+    API view for soft-deleting (deactivating) the authenticated user's account.
+    """
+
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
@@ -240,6 +274,10 @@ class SoftDeleteAccountView(views.APIView):
 
 
 class HardDeleteAccountView(views.APIView):
+    """
+    API view for admin to permanently delete a user account.
+    """
+
     permission_classes = [IsAdminUser]
 
     def delete(self, request, pk):
@@ -257,6 +295,10 @@ class HardDeleteAccountView(views.APIView):
 
 
 class RestoreAccountView(views.APIView):
+    """
+    API view for admin to restore a deleted a user account.
+    """
+
     permission_classes = [IsAdminUser]
 
     def post(self, request, pk):
@@ -276,6 +318,10 @@ class RestoreAccountView(views.APIView):
 
 
 class LogoutView(views.APIView):
+    """
+    API view to log out a user by clearing JWT cookies.
+    """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):

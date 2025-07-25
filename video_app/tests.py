@@ -11,6 +11,12 @@ from video_app.api import tasks, utils
 
 
 class VideoAppIntegrationTests(APITestCase):
+    """
+    Integration tests for the video_app.
+
+    Covers upload, listing, detail, patch, conversion, progress, cache, resolutions, and HLS streaming.
+    """
+
     def setUp(self):
         self.unauthenticated_client = APIClient()
         self.raw_password = "testpw"
@@ -27,15 +33,13 @@ class VideoAppIntegrationTests(APITestCase):
         print("LOGIN RESPONSE:", response.data)
         self.assertEqual(response.status_code, 200)
         self.assertIn("access_token", response.cookies)
-        
-
 
         # Sample video file (dummy, not playable but valid for upload)
         self.video_file = SimpleUploadedFile(
-                "test.mp4",
-                b"fake content",  # not a real video but fine for DB tests
-                content_type="video/mp4",
-            )
+            "test.mp4",
+            b"fake content",  # not a real video but fine for DB tests
+            content_type="video/mp4",
+        )
 
         # Another video for listing
         self.other_video = Video.objects.create(
@@ -130,7 +134,7 @@ class VideoAppIntegrationTests(APITestCase):
         data = {"description": "Does not exist"}
         response = self.client.patch(url, data)
         self.assertEqual(response.status_code, 404)
-        
+
     def test_patch_video_invalid_data(self):
         url = f"/api/video/{self.other_video.pk}/"
         response = self.client.patch(url, {"category": ""})
@@ -284,13 +288,11 @@ class VideoAppIntegrationTests(APITestCase):
         self.assertIn("ffmpeg", cmd)
         self.assertIn("input", cmd)
         self.assertIn("output", cmd)
-        
 
     def test_get_ffmpeg_hls_command(self):
         cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "height", 720)
         self.assertIn("-vf", cmd)
         self.assertIn("scale=-2:720", cmd)
-
 
     @patch("django.db.models.fields.files.FieldFile.save", return_value=None)
     @patch("video_app.api.tasks.default_storage.delete", return_value=True)
@@ -298,19 +300,39 @@ class VideoAppIntegrationTests(APITestCase):
     @patch("video_app.api.tasks.ContentFile", return_value=b"img")
     @patch("video_app.api.tasks.open", new_callable=mock_open, read_data=b"img")
     @patch("video_app.api.tasks.subprocess.run", return_value=True)
-    @patch("video_app.api.tasks.get_ffmpeg_thumbnail_command", return_value=["ffmpeg", "args"])
-    @patch("video_app.api.tasks.build_output_filename", return_value="foo_thumbnail.jpg")
-    @patch("video_app.api.tasks.get_base_name_and_extension", return_value=("foo", "mp4"))
+    @patch(
+        "video_app.api.tasks.get_ffmpeg_thumbnail_command",
+        return_value=["ffmpeg", "args"],
+    )
+    @patch(
+        "video_app.api.tasks.build_output_filename", return_value="foo_thumbnail.jpg"
+    )
+    @patch(
+        "video_app.api.tasks.get_base_name_and_extension", return_value=("foo", "mp4")
+    )
     @patch("video_app.api.tasks.default_storage.path", side_effect=lambda x: x)
-    def test_create_thumbnail_success(self, mock_path, mock_get_base, mock_build_out, mock_get_cmd,
-        mock_subprocess, mock_openfile, mock_contentfile, mock_exists, mock_delete, mock_save):
+    def test_create_thumbnail_success(
+        self,
+        mock_path,
+        mock_get_base,
+        mock_build_out,
+        mock_get_cmd,
+        mock_subprocess,
+        mock_openfile,
+        mock_contentfile,
+        mock_exists,
+        mock_delete,
+        mock_save,
+    ):
         video = Video.objects.create(
-            title="Video 1", description="desc", category="Action", video_file="videos/foo.mp4"
+            title="Video 1",
+            description="desc",
+            category="Action",
+            video_file="videos/foo.mp4",
         )
         tasks.create_thumbnail(video.id)
         video.refresh_from_db()
         self.assertIn(video.status, ["processing", "ready", "failed"])
-
 
     @patch("video_app.api.tasks.default_storage.path", side_effect=lambda x: x)
     def test_create_thumbnail_invalid_file(self, mock_path):
@@ -387,7 +409,7 @@ class VideoAppIntegrationTests(APITestCase):
         res = VideoResolution.objects.create(
             original_video=self.other_video,
             resolution="720p",
-            converted_file="media/hls/vid/index.m3u8"
+            converted_file="media/hls/vid/index.m3u8",
         )
         url = f"/api/video/{self.other_video.id}/720p/index.m3u8"
         response = self.client.get(url)
@@ -401,7 +423,7 @@ class VideoAppIntegrationTests(APITestCase):
         res = VideoResolution.objects.create(
             original_video=self.other_video,
             resolution="480p",
-            converted_file="media/hls/vid/index.m3u8"
+            converted_file="media/hls/vid/index.m3u8",
         )
         url = f"/api/video/{self.other_video.id}/480p/index001.ts"
         response = self.client.get(url)
@@ -412,7 +434,7 @@ class VideoAppIntegrationTests(APITestCase):
         VideoResolution.objects.create(
             original_video=self.other_video,
             resolution="360p",
-            converted_file="media/hls/vid/index.m3u8"
+            converted_file="media/hls/vid/index.m3u8",
         )
         url = f"/api/video/{self.other_video.id}/360p/nonexistent.ts"
         response = self.client.get(url)

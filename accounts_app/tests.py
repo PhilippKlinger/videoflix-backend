@@ -5,33 +5,58 @@ from rest_framework import status
 from accounts_app.models import CustomUser
 from django.utils import timezone
 
+
 class AccountsIntegrationTests(APITestCase):
+    """
+    Integration tests for the accounts_app.
+
+    Covers registration, login, activation, password reset, deletion, and admin operations.
+    """
+
     def setUp(self):
         # Create admin
         self.admin = CustomUser.objects.create_user(
-            username="admin", email="admin@test.de", password="Admin123!", is_staff=True, is_active=True
+            username="admin",
+            email="admin@test.de",
+            password="Admin123!",
+            is_staff=True,
+            is_active=True,
         )
 
         # Create regular user (activated)
         self.user = CustomUser.objects.create_user(
-            username="testuser", email="user@test.de", password="User123!", is_active=True
+            username="testuser",
+            email="user@test.de",
+            password="User123!",
+            is_active=True,
         )
 
         # Create inactive user (not activated yet)
         self.inactive_user = CustomUser.objects.create_user(
-            username="inactive", email="inactive@test.de", password="Inactive123!", is_active=False
+            username="inactive",
+            email="inactive@test.de",
+            password="Inactive123!",
+            is_active=False,
         )
 
         # Create soft-deleted user
         self.deleted_user = CustomUser.objects.create_user(
-            username="deleted", email="deleted@test.de", password="Deleted123!", is_active=False, is_soft_deleted=True
+            username="deleted",
+            email="deleted@test.de",
+            password="Deleted123!",
+            is_active=False,
+            is_soft_deleted=True,
         )
 
     def authenticate_with_cookies(self, email, password):
-        response = self.client.post("/api/login/", {"email": email, "password": password})
+        response = self.client.post(
+            "/api/login/", {"email": email, "password": password}
+        )
         self.assertEqual(response.status_code, 200)
         self.client.cookies["access_token"] = response.cookies.get("access_token").value
-        self.client.cookies["refresh_token"] = response.cookies.get("refresh_token").value
+        self.client.cookies["refresh_token"] = response.cookies.get(
+            "refresh_token"
+        ).value
 
     # --- REGISTRATION ---
     def test_registration_success(self):
@@ -39,12 +64,11 @@ class AccountsIntegrationTests(APITestCase):
         data = {
             "email": "neu@example.com",
             "password": "NeuUser123!",
-            "confirmed_password": "NeuUser123!"
+            "confirmed_password": "NeuUser123!",
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 201)
         self.assertTrue(CustomUser.objects.filter(email="neu@example.com").exists())
-
 
     def test_registration_passwords_do_not_match(self):
         url = "/api/register/"
@@ -52,7 +76,7 @@ class AccountsIntegrationTests(APITestCase):
             "email": "fail@example.com",
             "username": "failuser",
             "password": "pw1",
-            "confirmed_password": "pw2"
+            "confirmed_password": "pw2",
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
@@ -64,7 +88,7 @@ class AccountsIntegrationTests(APITestCase):
             "email": "user@test.de",
             "username": "anotheruser",
             "password": "Password123!",
-            "confirmed_password": "Password123!"
+            "confirmed_password": "Password123!",
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
@@ -73,20 +97,14 @@ class AccountsIntegrationTests(APITestCase):
     # --- LOGIN ---
     def test_login_success(self):
         url = "/api/login/"
-        data = {
-            "email": "user@test.de",
-            "password": "User123!"
-        }
+        data = {"email": "user@test.de", "password": "User123!"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 200)
         self.assertIn("access_token", response.cookies)
 
     def test_login_wrong_password(self):
         url = "/api/login/"
-        data = {
-            "email": "user@test.de",
-            "password": "falsch"
-        }
+        data = {"email": "user@test.de", "password": "falsch"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
 
@@ -98,26 +116,23 @@ class AccountsIntegrationTests(APITestCase):
 
     def test_login_inactive_user(self):
         url = "/api/login/"
-        data = {
-            "email": "inactive@test.de",
-            "password": "Inactive123!"
-        }
+        data = {"email": "inactive@test.de", "password": "Inactive123!"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
 
     def test_login_soft_deleted_user(self):
         url = "/api/login/"
-        data = {
-            "email": "deleted@test.de",
-            "password": "Deleted123!"
-        }
+        data = {"email": "deleted@test.de", "password": "Deleted123!"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
 
     # --- ACTIVATION ---
     def test_activation_success(self):
         user = CustomUser.objects.create_user(
-            username="activateuser", email="activate@test.de", password="Pw123456!", is_active=False
+            username="activateuser",
+            email="activate@test.de",
+            password="Pw123456!",
+            is_active=False,
         )
         user.activation_code = "testcode"
         user.activation_code_expiry = timezone.now() + timezone.timedelta(hours=1)
@@ -131,7 +146,10 @@ class AccountsIntegrationTests(APITestCase):
 
     def test_activation_expired(self):
         user = CustomUser.objects.create_user(
-            username="expireduser", email="expired@test.de", password="Pw123456!", is_active=False
+            username="expireduser",
+            email="expired@test.de",
+            password="Pw123456!",
+            is_active=False,
         )
         user.activation_code = "expiredcode"
         user.activation_code_expiry = timezone.now() - timezone.timedelta(hours=1)
@@ -150,7 +168,10 @@ class AccountsIntegrationTests(APITestCase):
     # --- REQUEST NEW ACTIVATION LINK ---
     def test_request_new_activation_link_success(self):
         CustomUser.objects.create_user(
-            username="newactivation", email="newactivation@test.de", password="pw", is_active=False
+            username="newactivation",
+            email="newactivation@test.de",
+            password="pw",
+            is_active=False,
         )
         url = "/api/request-new-activation-link/"
         data = {"email": "newactivation@test.de"}
@@ -180,7 +201,10 @@ class AccountsIntegrationTests(APITestCase):
     # --- PASSWORD RESET CONFIRM ---
     def test_password_reset_confirm_success(self):
         user = CustomUser.objects.create_user(
-            username="pwreset", email="pwreset@test.de", password="OldPw123!", is_active=True
+            username="pwreset",
+            email="pwreset@test.de",
+            password="OldPw123!",
+            is_active=True,
         )
         user.activation_code = "resetcode"
         user.activation_code_expiry = timezone.now() + timezone.timedelta(hours=1)
@@ -196,7 +220,10 @@ class AccountsIntegrationTests(APITestCase):
 
     def test_password_reset_confirm_expired(self):
         user = CustomUser.objects.create_user(
-            username="pwexpired", email="pwexpired@test.de", password="OldPw123!", is_active=True
+            username="pwexpired",
+            email="pwexpired@test.de",
+            password="OldPw123!",
+            is_active=True,
         )
         user.activation_code = "expiredpwcode"
         user.activation_code_expiry = timezone.now() - timezone.timedelta(hours=1)

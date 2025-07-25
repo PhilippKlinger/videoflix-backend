@@ -1,3 +1,7 @@
+"""
+Background tasks for video processing: thumbnail creation, conversion, and caching.
+"""
+
 import logging
 import os
 import subprocess
@@ -37,8 +41,22 @@ def create_thumbnail(video_id):
         output_filename = build_output_filename(base_name, "thumbnail", "jpg")
         input_path = default_storage.path(input_file.name)
         output_path = default_storage.path(output_filename)
-        command = get_ffmpeg_thumbnail_command(input_path, output_path)
 
+        _run_thumbnail_command(input_path, output_path, video_instance, output_filename)
+    except Exception as e:
+        logger.error(f"General error in create_thumbnail: {e}")
+        if video_instance:
+            set_video_failed(video_instance)
+    finally:
+        _cleanup_temp_thumbnail(output_filename)
+
+
+def _run_thumbnail_command(input_path, output_path, video_instance, output_filename):
+    """
+    Run ffmpeg to create a thumbnail and save it to the video instance.
+    """
+    command = get_ffmpeg_thumbnail_command(input_path, output_path)
+    try:
         subprocess.run(command, check=True)
         with open(output_path, "rb") as f:
             video_instance.thumbnail_url.save(
@@ -48,15 +66,15 @@ def create_thumbnail(video_id):
         video_instance.save()
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to create thumbnail: {e}")
-        if video_instance:
-            set_video_failed(video_instance)
-    except Exception as e:
-        logger.error(f"General error in create_thumbnail: {e}")
-        if video_instance:
-            set_video_failed(video_instance)
-    finally:
-        if output_filename and default_storage.exists(output_filename):
-            default_storage.delete(output_filename)
+        set_video_failed(video_instance)
+
+
+def _cleanup_temp_thumbnail(output_filename):
+    """
+    Remove the temporary thumbnail file if it exists.
+    """
+    if output_filename and default_storage.exists(output_filename):
+        default_storage.delete(output_filename)
 
 
 def convert_video(video_id):
@@ -72,31 +90,61 @@ def convert_video(video_id):
 
     output_base_dir = os.path.join(settings.MEDIA_ROOT, "hls", base_name)
     os.makedirs(output_base_dir, exist_ok=True)
+    _convert_to_all_resolutions(video_instance, input_file, base_name, output_base_dir)
 
+
+def _convert_to_all_resolutions(video_instance, input_file, base_name, output_base_dir):
+    """
+    Loop through all target resolutions, convert and save each one.
+    """
     total_resolutions = len(RESOLUTIONS)
     for index, (res_label, res_height) in enumerate(RESOLUTIONS):
         out_dir = os.path.join(output_base_dir, res_label)
         os.makedirs(out_dir, exist_ok=True)
-        command, playlist_path = get_ffmpeg_hls_command(
-            default_storage.path(input_file.name), out_dir, base_name, res_height
+        _run_hls_command(
+            video_instance,
+            input_file,
+            out_dir,
+            base_name,
+            res_label,
+            res_height,
+            index + 1,
+            total_resolutions,
         )
-        try:
-            subprocess.run(command, check=True)
-            rel_playlist_path = os.path.relpath(
-                os.path.join(out_dir, "index.m3u8"), settings.MEDIA_ROOT
-            )
-            VideoResolution.objects.create(
-                original_video=video_instance,
-                resolution=res_label,
-                converted_file=rel_playlist_path,
-            )
-            update_video_progress(
-                video_instance, index + 1, total_resolutions, res_label
-            )
-            update_video_cache()
-        except Exception as e:
-            set_video_failed(video_instance)
-            return
+
+
+def _run_hls_command(
+    video_instance,
+    input_file,
+    out_dir,
+    base_name,
+    res_label,
+    res_height,
+    progress_index,
+    total_resolutions,
+):
+    """
+    Run ffmpeg to create HLS for a resolution, update DB and cache.
+    """
+    command, playlist_path = get_ffmpeg_hls_command(
+        default_storage.path(input_file.name), out_dir, base_name, res_height
+    )
+    try:
+        subprocess.run(command, check=True)
+        rel_playlist_path = os.path.relpath(
+            os.path.join(out_dir, "index.m3u8"), settings.MEDIA_ROOT
+        )
+        VideoResolution.objects.create(
+            original_video=video_instance,
+            resolution=res_label,
+            converted_file=rel_playlist_path,
+        )
+        update_video_progress(
+            video_instance, progress_index, total_resolutions, res_label
+        )
+        update_video_cache()
+    except Exception as e:
+        set_video_failed(video_instance)
 
 
 def set_video_failed(video_instance):
@@ -119,5 +167,8 @@ def update_video_progress(video_instance, done, total, current_res):
 
 
 def update_video_cache():
+    """
+    Delete the video list cache to trigger refresh.
+    """
     cache_key = "all_videos"
     cache.delete(cache_key)

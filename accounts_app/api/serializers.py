@@ -1,3 +1,7 @@
+"""
+Serializers for user registration, authentication and password management.
+"""
+
 import uuid
 from rest_framework import serializers
 from django.contrib.auth import authenticate
@@ -7,6 +11,9 @@ from accounts_app.models import CustomUser
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user registration.
+    """
     confirmed_password = serializers.CharField(write_only=True)
 
     class Meta:
@@ -42,7 +49,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         )
         return user
 
+
 class CustomLoginCookieSerializer(TokenObtainPairSerializer):
+    """
+    Serializer for login via email/password with JWT cookie support.
+    """
+
     username_field = "email"
 
     def validate(self, attrs):
@@ -54,12 +66,12 @@ class CustomLoginCookieSerializer(TokenObtainPairSerializer):
             username=email,
             password=password,
         )
-        
+
         if not user or not user.is_active or getattr(user, "is_soft_deleted", False):
             raise serializers.ValidationError(
                 "Please check your entries and try again."
             )
-            
+
         self.user = user
         data = super().validate(attrs)
         data["user"] = user
@@ -67,6 +79,10 @@ class CustomLoginCookieSerializer(TokenObtainPairSerializer):
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
+    """
+    Serializer for requesting a password reset.
+    """
+
     email = serializers.EmailField(required=True)
 
     def validate_email(self, value):
@@ -74,6 +90,10 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 
 class PasswordResetSerializer(serializers.Serializer):
+    """
+    Serializer for confirming a password reset.
+    """
+
     new_password = serializers.CharField(required=True, write_only=True)
     confirm_password = serializers.CharField(required=True, write_only=True)
 

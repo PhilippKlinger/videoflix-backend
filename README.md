@@ -130,10 +130,4 @@ Access Django Admin at [http://localhost:8000/admin/](http://localhost:8000/admi
 
 ---
 
-## License
-
-MIT (or your project’s license)
-
----
-
 **Happy streaming! 🚀**

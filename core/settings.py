@@ -1,36 +1,29 @@
-from datetime import timedelta
 import os
+from datetime import timedelta
 from pathlib import Path
-import environ
+import django
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # BASE_DIR
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Initialize environ
-env = environ.Env()
-environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
-
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY",default="django-insecure-@#x5h3zj!g+8g1v@2^b6^9$8&f1r7g$@t3v!p4#=g0r5qzj4m3",)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env.bool("DEBUG")
+DEBUG = os.getenv("DEBUG")
 
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS").split(",")
 
 # CORS
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS").split(",")
+CORS_ALLOWED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS").split(",")
 CORS_ALLOW_CREDENTIALS = True
 
-# CSRF
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS")
-
 # FRONTEND_URL
-FRONTEND_URL = env("FRONTEND_URL")
-
-# INTERNAL_IPS (z.B. für Django Debug Toolbar)
-INTERNAL_IPS = env.list("INTERNAL_IPS")
+FRONTEND_URL = "http://localhost:5500"
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -55,6 +48,7 @@ AUTH_USER_MODEL = "accounts_app.CustomUser"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "debug_toolbar.middleware.DebugToolbarMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -105,9 +99,9 @@ IMPORT_EXPORT_TMP_STORAGE_CLASS = True
 
 
 STATIC_URL = "/static/"
-STATICFILES_DIRS = [os.path.join(BASE_DIR, "static")]
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
@@ -120,11 +114,11 @@ MEDIA_URL = "/media/"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("DB_NAME"),
-        "USER": env("DB_USER"),
-        "PASSWORD": env("DB_PASSWORD"),
-        "HOST": env("DB_HOST"),
-        "PORT": env("DB_PORT"),
+        "NAME": os.environ.get("DB_NAME", default="videoflix_db"),
+        "USER": os.environ.get("DB_USER", default="videoflix_user"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", default="supersecretpassword"),
+        "HOST": os.environ.get("DB_HOST", default="db"),
+        "PORT": os.environ.get("DB_PORT", default=5432)
     }
 }
 
@@ -165,42 +159,34 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-REDIS_HOST = env("REDIS_HOST")
-REDIS_PORT = env.int("REDIS_PORT")
-REDIS_PASSWORD = env("REDIS_PASSWORD")
-REDIS_DB_RQ = env.int("REDIS_DB_RQ")
-REDIS_DB_CACHE = env.int("REDIS_DB_CACHE")
-REDIS_TIMEOUT = env.int("REDIS_TIMEOUT")
-
 RQ_QUEUES = {
-    "default": {
-        "HOST": REDIS_HOST,
-        "PORT": REDIS_PORT,
-        "DB": REDIS_DB_RQ,
-        "PASSWORD": REDIS_PASSWORD,
-        "DEFAULT_TIMEOUT": REDIS_TIMEOUT,
+    'default': {
+        'HOST': os.environ.get("REDIS_HOST", default="redis"),
+        'PORT': os.environ.get("REDIS_PORT", default=6379),
+        'DB': os.environ.get("REDIS_DB", default=0),
+        'DEFAULT_TIMEOUT': 900,
+        'REDIS_CLIENT_KWARGS': {},
     },
 }
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB_CACHE}",
+        "LOCATION": os.environ.get("REDIS_LOCATION", default="redis://redis:6379/1"),
         "OPTIONS": {
-            "PASSWORD": REDIS_PASSWORD,
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "CLIENT_CLASS": "django_redis.client.DefaultClient"
         },
-        "KEY_PREFIX": "video_app",
+        "KEY_PREFIX": "videoflix"
     }
 }
 
-EMAIL_BACKEND = env("EMAIL_BACKEND")
-EMAIL_HOST = env("EMAIL_HOST")
-EMAIL_PORT = env.int("EMAIL_PORT")
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS")
-EMAIL_HOST_USER = env("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.environ.get("EMAIL_HOST")
+EMAIL_PORT = os.environ.get("EMAIL_PORT")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS")
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL")
 
 LOGGING = {
     "version": 1,
@@ -217,18 +203,16 @@ LOGGING = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=25),     
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': True,
-
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
-
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=15),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=25),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=15),
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=7),
 }

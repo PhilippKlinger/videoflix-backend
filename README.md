@@ -52,13 +52,14 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 git clone git@github.com:PhilippKlinger/videoflix_backend.git  
 cd videoflix_backend  
 
+
 # 2. Build and start all services (backend, Postgres, Redis)  
 docker-compose up --build  
-´´´
+
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
 🟢 All migrations, static/media setup, and superuser creation are handled by the entrypoint script.
-
+```bash
 ---
 
 ## Local Development (advanced, optional)

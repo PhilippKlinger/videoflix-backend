@@ -129,5 +129,3 @@ Access Django Admin at [http://localhost:8000/admin/](http://localhost:8000/admi
 5. View and stream videos via the `/api/video/` endpoints
 
 ---
-
-**Happy streaming! 🚀**

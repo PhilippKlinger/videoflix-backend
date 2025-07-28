@@ -52,10 +52,15 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 git clone git@github.com:PhilippKlinger/videoflix_backend.git  
 cd videoflix_backend  
 
+# 2. Make a copy of the .env.template
+cp .env.template .env
 
-# 2. Build and start all services (backend, Postgres, Redis)  
+# 3. Enter your secrets, db settings etc. Be sure to set the right port for CORS.
+http://localhost:5500/ -> Live Server
+http://localhost:4200/ -> Angular
+
+# 4. Build and start all services (backend, Postgres, Redis)  
 docker-compose up --build  
-
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
 🟢 All migrations, static/media setup, and superuser creation are handled by the entrypoint script.
@@ -88,10 +93,12 @@ Full details: See Swagger or Redoc docs below.
 ## API Documentation (Swagger & Redoc)
 
 After running `docker-compose up`, view docs at:
-
+```bash
 - **Swagger UI**
+http://localhost:8000/swagger/
 - **Redoc UI**
-
+http://localhost:8000/redoc/
+```
 You can:
 
 - See all endpoints, parameters, models, responses, and error codes.
@@ -106,7 +113,7 @@ You can:
 Run tests inside the running container:
 
 docker-compose exec web sh  
-python -m coverage run manage.py test video_app  
+python -m coverage run manage.py test  
 coverage report
 
 **Media & Static files**  

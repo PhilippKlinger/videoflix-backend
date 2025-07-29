@@ -8,8 +8,6 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.shortcuts import redirect
-from django.conf import settings
 from django.utils import timezone
 
 from accounts_app.models import CustomUser
@@ -51,25 +49,42 @@ class RegisterUserView(views.APIView):
 
 class ActivateAccountView(views.APIView):
     """
-    API view for activating a user account via activation code.
+    API view for activating a user account via UID and activation token.
     """
 
     permission_classes = [AllowAny]
 
-    def get(self, request, activation_code):
+    def get(self, request, uid, token):
         try:
+            uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
             user = CustomUser.objects.get(
-                activation_code=activation_code, is_active=False
+                pk=uid_decoded, activation_code=token, is_active=False
             )
-            if timezone.now() > user.activation_code_expiry:
-                return redirect(f"{settings.FRONTEND_URL}?status=expired")
+            if (
+                not user.activation_code_expiry
+                or timezone.now() > user.activation_code_expiry
+            ):
+                return Response(
+                    {"detail": "Activation link expired."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             user.is_active = True
             user.activation_code = None
             user.activation_code_expiry = None
             user.save()
-            return redirect(f"{settings.FRONTEND_URL}/pages/auth/login.html")
+            return Response(
+                {"detail": "Account successfully activated."}, status=status.HTTP_200_OK
+            )
         except CustomUser.DoesNotExist:
-            return redirect(f"{settings.FRONTEND_URL}?status=invalid")
+            return Response(
+                {"detail": "Invalid activation link."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            return Response(
+                {"detail": "Account activation failed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class CustomLoginCookieView(views.APIView):

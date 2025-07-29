@@ -25,9 +25,9 @@ def send_activation_email(user, request):
     """
     Send an activation email to the user.
     """
-    activation_url = request.build_absolute_uri(
-        reverse("activate_account", args=[user.activation_code])
-    )
+    uid = base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+    token = user.activation_code
+    activation_url = f"{settings.FRONTEND_URL}/pages/auth/activate.html?uid={uid}&token={token}"
     subject = "Confirm your email"
     from_email = settings.DEFAULT_FROM_EMAIL
     to_email = [user.email]

@@ -56,8 +56,8 @@ cd videoflix_backend
 cp .env.template .env
 
 # 3. Enter your secrets, db settings etc. Be sure to set the right port for CORS.
-http://localhost:5500/ -> Live Server
-http://localhost:4200/ -> Angular
+http://127.0.0.1:5500/ -> Live Server
+http://127.0.0.1:4200/ -> Angular
 
 # 4. Build and start all services (backend, Postgres, Redis)  
 docker-compose up --build  
@@ -95,9 +95,9 @@ Full details: See Swagger or Redoc docs below.
 After running `docker-compose up`, view docs at:
 ```bash
 - **Swagger UI**
-http://localhost:8000/swagger/
+http://127.0.0.1:8000/swagger/
 - **Redoc UI**
-http://localhost:8000/redoc/
+http://127.0.0.1:8000/redoc/
 ```
 You can:
 
@@ -123,7 +123,7 @@ Uploaded videos and static files are persisted in Docker volumes.
 Sensitive settings are loaded from `.env` (see `.env.example` for reference).
 
 **Admin UI**  
-Access Django Admin at [http://localhost:8000/admin/](http://localhost:8000/admin/) (credentials set in `.env`).
+Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) (credentials set in `.env`).
 ```
 ---
 

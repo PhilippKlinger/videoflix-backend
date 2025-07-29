@@ -23,7 +23,7 @@ CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS").split(",")
 CORS_ALLOW_CREDENTIALS = True
 
 # FRONTEND_URL
-FRONTEND_URL = "http://localhost:5500"
+FRONTEND_URL = "http://127.0.0.1:5500"
 
 INSTALLED_APPS = [
     "django.contrib.admin",

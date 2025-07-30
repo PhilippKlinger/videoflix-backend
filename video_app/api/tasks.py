@@ -20,7 +20,7 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-RESOLUTIONS = [("360p", 360), ("480p", 480), ("720p", 720), ("1080p", 1080)]
+RESOLUTIONS = [("480p", 480), ("720p", 720), ("1080p", 1080)]
 
 
 def create_thumbnail(video_id):

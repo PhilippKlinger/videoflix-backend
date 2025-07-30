@@ -5,6 +5,7 @@ Signals for automatic video processing and cleanup on save/delete.
 import logging
 import os
 import shutil
+from django.core.cache import cache
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 from django.core.files.storage import default_storage
@@ -41,7 +42,7 @@ def video_pre_delete(sender, instance, **kwargs):
     video_dirs = _delete_all_hls_and_collect_dirs(instance)
     _delete_empty_video_dirs(video_dirs)
     _delete_thumbnail_file(instance)
-
+    cache.delete("all_videos")
 
 def _delete_original_video_file(instance):
     """

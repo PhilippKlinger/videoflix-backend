@@ -127,6 +127,10 @@ class AccountsIntegrationTests(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     # --- ACTIVATION ---
+    def get_uid_token(self, user):
+        uid = base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+        return uid, user.activation_code
+    
     def test_activation_success(self):
         user = CustomUser.objects.create_user(
             username="activateuser",
@@ -137,9 +141,11 @@ class AccountsIntegrationTests(APITestCase):
         user.activation_code = "testcode"
         user.activation_code_expiry = timezone.now() + timezone.timedelta(hours=1)
         user.save()
-        url = f"/api/activate/{user.activation_code}/"
+        uid, token = self.get_uid_token(user)
+        url = f"/api/activate/{uid}/{token}/"
         response = self.client.get(url)
-        self.assertIn(response.status_code, [302, 301])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.get("detail") or response.data.get("message"), "Account successfully activated.")
         user.refresh_from_db()
         self.assertTrue(user.is_active)
         self.assertIsNone(user.activation_code)
@@ -154,16 +160,31 @@ class AccountsIntegrationTests(APITestCase):
         user.activation_code = "expiredcode"
         user.activation_code_expiry = timezone.now() - timezone.timedelta(hours=1)
         user.save()
-        url = f"/api/activate/{user.activation_code}/"
+        uid, token = self.get_uid_token(user)
+        url = f"/api/activate/{uid}/{token}/"
         response = self.client.get(url)
-        self.assertIn(response.status_code, [302, 301])
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expired", response.data.get("detail", "").lower() or response.data.get("message", "").lower())
         user.refresh_from_db()
         self.assertFalse(user.is_active)
 
     def test_activation_invalid_code(self):
-        url = "/api/activate/thiscodedoesnotexist/"
+        user = CustomUser.objects.create_user(
+            username="testuser_invalidcode",
+            email="testuser_invalidcode@test.de",
+            password="Pw123456!",
+            is_active=False,
+        )
+        user.activation_code = "validcode"
+        user.activation_code_expiry = timezone.now() + timezone.timedelta(hours=1)
+        user.save()
+        uid = base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+        invalid_token = "thiscodedoesnotexist"
+        url = f"/api/activate/{uid}/{invalid_token}/"
         response = self.client.get(url)
-        self.assertIn(response.status_code, [302, 301])
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("invalid", response.data.get("detail", "").lower() or response.data.get("message", "").lower())
+
 
     # --- REQUEST NEW ACTIVATION LINK ---
     def test_request_new_activation_link_success(self):

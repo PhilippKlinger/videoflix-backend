@@ -49,7 +49,7 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 
 ```bash
 # 1. Clone the repository  
-git clone -b <da-version> git@github.com:PhilippKlinger/videoflix-backend.git 
+git clone -b da-version git@github.com:PhilippKlinger/videoflix-backend.git 
 cd videoflix_backend  
 
 # 2. Make a copy of the .env.template

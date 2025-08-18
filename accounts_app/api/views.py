@@ -111,14 +111,18 @@ class CustomLoginCookieView(views.APIView):
                 value=str(refresh.access_token),
                 httponly=True,
                 secure=True,
-                samesite="Lax",
+                samesite="None",
+                path="/",
+                max_age=60 * 25,
             )
             response.set_cookie(
                 key="refresh_token",
                 value=str(refresh),
                 httponly=True,
                 secure=True,
-                samesite="Lax",
+                samesite="None",
+                path="/",
+                max_age=60 * 60 * 24 * 7,
             )
             return response
 
@@ -154,7 +158,9 @@ class CustomLoginCookieRefreshView(views.APIView):
                 value=access_token,
                 httponly=True,
                 secure=True,
-                samesite="Lax",
+                samesite="None",
+                path="/",
+                max_age=60 * 25,
             )
 
             return response
@@ -163,7 +169,7 @@ class CustomLoginCookieRefreshView(views.APIView):
             return Response(
                 {"detail": "Invalid or expired refresh token."},
                 status=status.HTTP_401_UNAUTHORIZED,
-            )
+            ) 
 
 
 class RequestNewActivationLinkView(views.APIView):
@@ -343,6 +349,6 @@ class LogoutView(views.APIView):
         response = Response(
             {"detail": "Logged out successfully."}, status=status.HTTP_200_OK
         )
-        response.delete_cookie("access_token")
-        response.delete_cookie("refresh_token")
+        response.delete_cookie("access_token", path="/")
+        response.delete_cookie("refresh_token", path="/")
         return response

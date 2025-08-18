@@ -15,7 +15,6 @@ from rest_framework.permissions import AllowAny
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
-from core.settings import BASE_DIR
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -37,7 +36,7 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=os.path.join(BASE_DIR, "static"))
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
     import debug_toolbar
@@ -45,3 +44,7 @@ if settings.DEBUG:
         path('__debug__/', include(debug_toolbar.urls)),
         path("api-auth/", include("rest_framework.urls")),
     ] + urlpatterns
+else:
+    # temporary small Hosting without Nginx:
+    if os.getenv("SERVE_MEDIA_THROUGH_DJANGO", "0") in ("1","true","True"):
+        urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

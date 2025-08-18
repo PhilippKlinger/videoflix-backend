@@ -49,18 +49,20 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 
 ```bash
 # 1. Clone the repository  
-git clone git@github.com:PhilippKlinger/videoflix_backend.git  
+git clone -b <da-version> git@github.com:PhilippKlinger/videoflix-backend.git 
 cd videoflix_backend  
 
 # 2. Make a copy of the .env.template
-cp .env.template .env
+cp .env.dev.template .env -> local development
+cp .env.prod.template .env -> production server
 
 # 3. Enter your secrets, db settings etc. Be sure to set the right port for CORS.
 http://127.0.0.1:5500/ -> Live Server
 http://127.0.0.1:4200/ -> Angular
 
 # 4. Build and start all services (backend, Postgres, Redis)  
-docker-compose up --build  
+docker compose --profile dev up -d --build -> local development
+docker compose --profile prod up -d --build -> production server
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
 🟢 All migrations, static/media setup, and superuser creation are handled by the entrypoint script.
@@ -112,9 +114,19 @@ You can:
 **Testing**  
 Run tests inside the running container:
 
-docker-compose exec web sh  
-python -m coverage run manage.py test  
-coverage report
+# Tests im Container (DEV-Profile):
+docker compose --profile dev exec web sh -lc "
+  python -m coverage run manage.py test && coverage report
+"
+
+# Tests im Container (PROD-Profile):
+docker compose --profile prod exec web-prod sh -lc "
+  python -m coverage run manage.py test && coverage report
+"
+
+# Logs:
+docker compose logs -f web       # dev
+docker compose logs -f web-prod  # prod
 
 **Media & Static files**  
 Uploaded videos and static files are persisted in Docker volumes.

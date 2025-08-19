@@ -9,7 +9,8 @@ import os
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.static import serve as static_serve
 
 from rest_framework.permissions import AllowAny
 from drf_yasg.views import get_schema_view
@@ -46,5 +47,7 @@ if settings.DEBUG:
     ] + urlpatterns
 else:
     # temporary small Hosting without Nginx:
-    if os.getenv("SERVE_MEDIA_THROUGH_DJANGO", "0") in ("1","true","True"):
-        urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    if os.getenv("SERVE_MEDIA_THROUGH_DJANGO", "0") in ("1", "true", "True"):
+        urlpatterns += [
+            re_path(r"^media/(?P<path>.*)$", static_serve, {"document_root": settings.MEDIA_ROOT}),
+        ]

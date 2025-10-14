@@ -128,6 +128,21 @@ docker compose --profile prod exec web-prod sh -lc "
 docker compose logs -f web       # dev
 docker compose logs -f web-prod  # prod
 
+# Minimal Update-Flow
+docker compose --profile dev exec web sh -lc "pip install -U -r requirements.txt"
+docker compose --profile dev exec web sh -lc "pip freeze > requirements.txt"
+docker compose --profile dev exec web sh -lc "
+  python manage.py check &&
+  python manage.py makemigrations --check --dry-run &&
+  python -m coverage run manage.py test && coverage report
+"
+
+# on Prod Server
+git pull
+docker compose --profile prod build --no-cache
+docker compose --profile prod run --rm web-prod python manage.py migrate
+docker compose --profile prod up -d
+
 **Media & Static files**  
 Uploaded videos and static files are persisted in Docker volumes.
 

@@ -11,6 +11,11 @@
       "name": "rest_framework",
       "depth": 10,
       "includeAllSymbols": true
+    },
+    {
+      "name": "rest_framework_simplejwt",
+      "depth": 10,
+      "includeAllSymbols": true
     }
   ]
 }

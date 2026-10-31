@@ -5,7 +5,7 @@
 __pycache__
 db.sqlite3
 media/
-static/
+staticfiles/
 
 # Django Migrations
 */migrations/*.pyc
@@ -115,6 +115,7 @@ GitHub.sublime-settings
 # Docker
 .dockerignore
 # docker-compose.yml
+.docker.env
 
 # Node.js (optional)
 node_modules/
@@ -131,5 +132,5 @@ yarn-error.log
 .vscode/launch.json
 
 #custom
-videoflix_api/static/videos
 received_mails/*
+up.bat

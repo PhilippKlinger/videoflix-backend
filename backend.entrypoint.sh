@@ -20,7 +20,9 @@ fi
 python manage.py migrate --noinput
 
 # Optionaler Superuser nur beim ersten Deploy
-if [ "${CREATE_SUPERUSER:-1}" = "1" ]; then
+if [ "${CREATE_SUPERUSER:-1}" = "1" ] && [ -z "${DJANGO_SUPERUSER_PASSWORD:-}" ]; then
+  echo "DJANGO_SUPERUSER_PASSWORD not set, skipping superuser creation."
+elif [ "${CREATE_SUPERUSER:-1}" = "1" ]; then
 python manage.py shell <<EOF
 import os
 from django.contrib.auth import get_user_model
@@ -28,7 +30,7 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
 email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@example.com')
-password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'adminpassword')
+password = os.environ['DJANGO_SUPERUSER_PASSWORD']
 
 if not User.objects.filter(username=username).exists():
     print(f"Creating superuser '{username}'...")

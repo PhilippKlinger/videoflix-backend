@@ -11,6 +11,7 @@ from django.dispatch import receiver
 from django.core.files.storage import default_storage
 from video_app.models import Video
 from .tasks import convert_video, create_thumbnail
+from .utils import STANDARD_VIDEOS_CACHE_KEY
 import django_rq
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ def video_pre_delete(sender, instance, **kwargs):
     video_dirs = _delete_all_hls_and_collect_dirs(instance)
     _delete_empty_video_dirs(video_dirs)
     _delete_thumbnail_file(instance)
-    cache.delete("all_videos")
+    cache.delete(STANDARD_VIDEOS_CACHE_KEY)
 
 def _delete_original_video_file(instance):
     """

@@ -21,6 +21,7 @@ from .utils import (
     send_activation_email,
     send_password_reset_email,
     generate_activation_code,
+    is_admin,
 )
 
 
@@ -367,7 +368,7 @@ class MeView(views.APIView):
             {
                 "id": user.id,
                 "email": user.email,
-                "role": "admin" if user.is_staff else "member",
+                "role": "admin" if is_admin(user) else "member",
             },
             status=status.HTTP_200_OK,
         )

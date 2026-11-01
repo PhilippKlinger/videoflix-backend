@@ -31,7 +31,7 @@ class VideoAdmin(ImportExportModelAdmin):
     inlines = [VideoResolutionInline, VideoProgressInline]
     list_display = ("title", "owner", "category", "created_at")
     # Empty owner = standard video; filter shows uploads per account.
-    list_filter = ("owner",)
+    list_filter = (("owner", admin.RelatedOnlyFieldListFilter),)
     search_fields = ("title", "description", "owner__email")
 
 

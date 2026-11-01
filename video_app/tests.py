@@ -1,4 +1,8 @@
+import os
+import tempfile
+from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient, APITestCase
 from rest_framework import status
@@ -8,6 +12,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import mock_open, patch, MagicMock
 from video_app.api.tasks import convert_video
 from video_app.api import tasks, utils
+from video_app.api.utils import STANDARD_VIDEOS_CACHE_KEY
 
 
 class VideoAppIntegrationTests(APITestCase):
@@ -232,7 +237,7 @@ class VideoAppIntegrationTests(APITestCase):
 
     def test_list_videos_empty(self):
         Video.objects.all().delete()
-        cache.delete("all_videos")
+        cache.delete(STANDARD_VIDEOS_CACHE_KEY)
         url = "/api/video/"
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
@@ -241,11 +246,11 @@ class VideoAppIntegrationTests(APITestCase):
     def test_video_list_cache(self):
         url = "/api/video/"
 
-        cache.delete("all_videos")
+        cache.delete(STANDARD_VIDEOS_CACHE_KEY)
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
-        cache.set("all_videos", [{"title": "From Cache"}], timeout=300)
+        cache.set(STANDARD_VIDEOS_CACHE_KEY, [{"title": "From Cache"}], timeout=300)
         response = self.client.get(url)
         self.assertEqual(response.data[0]["title"], "From Cache")
 
@@ -548,6 +553,17 @@ class VideoOwnershipTests(APITestCase):
         self.assertEqual(by_title["Alice upload"]["visibility"], "private")
         self.assertTrue(by_title["Alice upload"]["is_own"])
 
+    def test_list_sorts_standard_and_uploads_by_time(self):
+        # A full second serialises without fraction ("...00Z") and would sort
+        # after "...00.500000Z" as a string, although it is older.
+        base = datetime(2026, 1, 1, 10, 0, 0, tzinfo=dt_timezone.utc)
+        Video.objects.filter(pk=self.standard.pk).update(created_at=base)
+        Video.objects.filter(pk=self.alice_video.pk).update(
+            created_at=base + timedelta(milliseconds=500)
+        )
+        response = self.alice_client.get("/api/video/")
+        self.assertEqual([video["title"] for video in response.data], ["Alice upload", "Standard"])
+
     # --- DETAIL, STREAM, CONVERSION PROGRESS ---
     def test_foreign_private_video_is_not_found(self):
         VideoResolution.objects.create(
@@ -618,10 +634,20 @@ class VideoOwnershipTests(APITestCase):
 
     # --- ACCOUNT DELETION ---
     def test_hard_delete_removes_uploads(self):
-        response = self.admin_client.delete(f"/api/admin/delete-account/{self.alice.pk}/")
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(Video.objects.filter(pk=self.alice_video.pk).exists())
-        self.assertTrue(Video.objects.filter(pk=self.standard.pk).exists())
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.alice_video.video_file = SimpleUploadedFile(
+                "alice.mp4", b"fake content", content_type="video/mp4"
+            )
+            self.alice_video.save()
+            file_path = self.alice_video.video_file.path
+            self.assertTrue(os.path.exists(file_path))
+
+            response = self.admin_client.delete(f"/api/admin/delete-account/{self.alice.pk}/")
+
+            self.assertEqual(response.status_code, 204)
+            self.assertFalse(Video.objects.filter(pk=self.alice_video.pk).exists())
+            self.assertFalse(os.path.exists(file_path))
+            self.assertTrue(Video.objects.filter(pk=self.standard.pk).exists())
 
     def test_soft_delete_keeps_uploads_for_admin(self):
         response = self.alice_client.delete("/api/delete-account/", {"confirm": True}, format="json")
@@ -633,6 +659,25 @@ class VideoOwnershipTests(APITestCase):
     def test_member_cannot_clear_cache(self):
         self.assertEqual(self.bob_client.post("/api/clear-cache/").status_code, 403)
 
-    def test_member_cannot_open_django_rq(self):
-        response = self.bob_client.get("/api/django-rq/")
-        self.assertNotEqual(response.status_code, 200)
+    # django-rq uses the Django session, not the JWT cookie, so these tests log in with a session.
+    def test_member_is_sent_to_admin_login_for_django_rq(self):
+        self.client.force_login(self.bob)
+        response = self.client.get("/api/django-rq/")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/admin/login/"))
+
+    def test_admin_can_open_django_rq(self):
+        self.client.force_login(self.admin)
+        response = self.client.get("/api/django-rq/")
+        self.assertEqual(response.status_code, 200)
+
+    # --- DJANGO ADMIN ---
+    def test_admin_owner_filter_lists_only_accounts_with_uploads(self):
+        superuser = CustomUser.objects.create_superuser(
+            username="root", email="root@test.de", password="pw"
+        )
+        self.client.force_login(superuser)
+        response = self.client.get("/admin/video_app/video/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"owner__id__exact={self.alice.pk}")
+        self.assertNotContains(response, f"owner__id__exact={self.bob.pk}")

@@ -10,15 +10,15 @@ from rest_framework import views, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from django.utils.dateparse import parse_datetime
 
+from accounts_app.api.utils import is_admin
 from video_app.models import Video
 from .permissions import can_change_video, visible_videos
 from .serializers import VideoSerializer
+from .utils import STANDARD_VIDEOS_CACHE_KEY
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
-
-# Only standard videos are cached; private uploads never enter the shared cache.
-STANDARD_VIDEOS_CACHE_KEY = "all_videos"
 
 
 class VideoClearCache(views.APIView):
@@ -46,7 +46,7 @@ class VideoUploadView(views.APIView):
         serializer = VideoSerializer(data=request.data, context={"request": request})
         if serializer.is_valid():
             # Admin uploads become standard videos, all others stay private.
-            owner = None if request.user.is_staff else request.user
+            owner = None if is_admin(request.user) else request.user
             serializer.save(owner=owner)
             cache.delete(cache_key)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -90,7 +90,8 @@ class VideoListView(views.APIView):
             uploads, many=True, context={"request": request}
         ).data
         videos = list(serialized_uploads) + list(standard_videos)
-        videos.sort(key=lambda video: video["created_at"], reverse=True)
+        # Compare as datetimes; ISO strings with and without fractions sort wrongly.
+        videos.sort(key=lambda video: parse_datetime(video["created_at"]), reverse=True)
         return Response(videos)
 
     def _get_standard_videos(self, request):

@@ -4,6 +4,9 @@ Utility functions for video processing, file naming, and ffmpeg command generati
 
 import os
 
+# Only standard videos are cached; private uploads never enter the shared cache.
+STANDARD_VIDEOS_CACHE_KEY = "all_videos"
+
 
 def get_base_name_and_extension(file_name):
     """

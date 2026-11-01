@@ -2,6 +2,7 @@
 Serializers for video management and playback tracking.
 """
 
+from django.urls import reverse
 from rest_framework import serializers
 from video_app.models import Video, VideoProgress, VideoResolution
 from .utils import (
@@ -115,11 +116,11 @@ class VideoSerializer(serializers.ModelSerializer):
 
     def get_thumbnail_url(self, obj):
         """
-        Return absolute URL for the thumbnail image.
+        Return absolute URL of the protected thumbnail endpoint (no public /media/).
         """
         request = self.context.get("request")
         if obj.thumbnail_url:
-            url = obj.thumbnail_url.url
+            url = reverse("video-thumbnail", args=[obj.pk])
             if request is not None:
                 return request.build_absolute_uri(url)
             else:

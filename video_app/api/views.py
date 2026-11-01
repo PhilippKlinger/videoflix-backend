@@ -3,7 +3,6 @@ API views for video upload, listing, detail, conversion progress, cache, and HLS
 """
 
 import os
-from django.conf import settings
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import views, status
@@ -169,8 +168,12 @@ def _get_video_resolution_or_404(video, resolution):
 
 
 def _get_hls_file_path(base_path, filename):
+    # Only playlists and segments, and only inside the folder of this resolution (VFX-30).
+    if not filename.endswith((".m3u8", ".ts")):
+        raise Http404("Invalid file")
+    base_path = os.path.abspath(base_path)
     file_path = os.path.abspath(os.path.join(base_path, filename))
-    if not file_path.startswith(os.path.abspath(settings.MEDIA_ROOT)):
+    if os.path.commonpath([base_path, file_path]) != base_path:
         raise Http404("Invalid path")
     if not os.path.exists(file_path):
         raise Http404("File not found")
@@ -198,4 +201,24 @@ class VideoHLSServeView(views.APIView):
         base_dir = os.path.dirname(video_res.converted_file.path)
         file_path = _get_hls_file_path(base_dir, filename)
         content_type = _get_content_type(filename)
-        return FileResponse(open(file_path, "rb"), content_type=content_type)
+        response = FileResponse(open(file_path, "rb"), content_type=content_type)
+        # Private media: browsers may cache, shared proxies must not.
+        response["Cache-Control"] = "private"
+        return response
+
+
+class VideoThumbnailView(views.APIView):
+    """
+    API view to serve the thumbnail of a video the user may see (VFX-30).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, video_id):
+        video = _get_video_or_404(request.user, video_id)
+        thumbnail = video.thumbnail_url
+        if not thumbnail or not thumbnail.storage.exists(thumbnail.name):
+            raise Http404("Thumbnail not found")
+        response = FileResponse(thumbnail.open("rb"), content_type="image/jpeg")
+        response["Cache-Control"] = "private"
+        return response

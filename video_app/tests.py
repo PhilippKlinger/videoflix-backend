@@ -1,11 +1,14 @@
+import importlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
+from django.http import Http404
 from django.test import override_settings
-from django.urls import reverse
+from django.urls import Resolver404, resolve, reverse
 from rest_framework.test import APIClient, APITestCase
 from rest_framework import status
 from video_app.models import Video, VideoResolution, VideoProgress
@@ -13,6 +16,7 @@ from accounts_app.models import CustomUser
 from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import mock_open, patch, MagicMock
 from video_app.api.tasks import convert_video
+from video_app.api.views import _get_hls_file_path
 from video_app.api import tasks, utils
 from video_app.api.utils import STANDARD_VIDEOS_CACHE_KEY
 
@@ -827,3 +831,149 @@ class UploadValidationTests(APITestCase):
         for title in ["One", "Two", "Three"]:
             with self.subTest(title=title):
                 self.assertEqual(self._upload(self.admin_client, title=title).status_code, 201)
+
+
+class MediaProtectionTests(APITestCase):
+    """
+    Media delivery (VFX-30, decision variant a).
+
+    No public /media/ route: HLS files and thumbnails only through the API with the
+    same visibility rule as videos, never cached by shared proxies.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media_root)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+        self.alice = CustomUser.objects.create_user(
+            username="alice", email="alice@test.de", password="pw", is_active=True
+        )
+        self.bob = CustomUser.objects.create_user(
+            username="bob", email="bob@test.de", password="pw", is_active=True
+        )
+        self.alice_client = APIClient()
+        self.alice_client.force_authenticate(user=self.alice)
+        self.bob_client = APIClient()
+        self.bob_client.force_authenticate(user=self.bob)
+
+        self.video = Video.objects.create(
+            title="Alice upload", description="d", category="Comedy", owner=self.alice,
+            thumbnail_url=self._write("thumbnails/clip.jpg", b"JPEG"),
+        )
+        self.standard = Video.objects.create(
+            title="Standard", description="d", category="Action",
+            thumbnail_url=self._write("thumbnails/standard.jpg", b"STANDARD"),
+        )
+        self.hls_dir = os.path.join(self.media_root, "hls", "clip", "720p")
+        self._write("hls/clip/720p/index.m3u8", b"#EXTM3U")
+        self._write("hls/clip/720p/index000.ts", b"TS")
+        self._write("hls/clip/720p/notes.txt", b"not a stream file")
+        self._write("videos/other-original.mp4", b"ORIGINAL")
+        VideoResolution.objects.create(
+            original_video=self.video, resolution="720p", converted_file="hls/clip/720p/index.m3u8"
+        )
+
+    def _write(self, relative_path, content):
+        path = os.path.join(self.media_root, relative_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(content)
+        return relative_path
+
+    def _hls_url(self, filename):
+        return f"/api/video/{self.video.pk}/720p/{filename}"
+
+    # --- HLS ---
+    def test_hls_files_are_served_privately(self):
+        for filename in ["index.m3u8", "index000.ts"]:
+            with self.subTest(filename=filename):
+                response = self.alice_client.get(self._hls_url(filename))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Cache-Control"], "private")
+                # Reading the stream lets the test client close the file safely.
+                self.assertTrue(b"".join(response.streaming_content))
+
+    def test_hls_serves_only_playlists_and_segments(self):
+        for filename in ["notes.txt", ".."]:
+            with self.subTest(filename=filename):
+                self.assertEqual(self.alice_client.get(self._hls_url(filename)).status_code, 404)
+
+    def test_hls_path_must_stay_inside_the_resolution_folder(self):
+        for filename in ["../../../videos/other-original.mp4", "../720p_x/index.m3u8"]:
+            with self.subTest(filename=filename):
+                with self.assertRaises(Http404):
+                    _get_hls_file_path(self.hls_dir, filename)
+
+    # --- THUMBNAILS ---
+    def test_list_points_thumbnails_to_the_api(self):
+        response = self.alice_client.get("/api/video/")
+        by_title = {video["title"]: video for video in response.data}
+        self.assertTrue(
+            by_title["Alice upload"]["thumbnail_url"].endswith(f"/api/video/{self.video.pk}/thumbnail/")
+        )
+        self.assertNotIn("/media/", by_title["Standard"]["thumbnail_url"])
+
+    def test_owner_gets_own_thumbnail_privately(self):
+        response = self.alice_client.get(f"/api/video/{self.video.pk}/thumbnail/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "private")
+        self.assertEqual(b"".join(response.streaming_content), b"JPEG")
+
+    def test_standard_thumbnail_is_visible_to_every_member(self):
+        response = self.bob_client.get(f"/api/video/{self.standard.pk}/thumbnail/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), b"STANDARD")
+
+    def test_foreign_private_thumbnail_is_not_found(self):
+        self.assertEqual(self.bob_client.get(f"/api/video/{self.video.pk}/thumbnail/").status_code, 404)
+
+    def test_missing_thumbnail_is_not_found(self):
+        video = Video.objects.create(title="No thumb", description="d", category="Comedy", owner=self.alice)
+        self.assertEqual(self.alice_client.get(f"/api/video/{video.pk}/thumbnail/").status_code, 404)
+
+    def test_thumbnail_requires_login(self):
+        self.assertEqual(APIClient().get(f"/api/video/{self.standard.pk}/thumbnail/").status_code, 401)
+
+    # --- NO PUBLIC /media/ ---
+    def test_media_route_is_gone_even_with_old_setting(self):
+        import core.urls
+
+        with patch.dict(os.environ, {"SERVE_MEDIA_THROUGH_DJANGO": "1"}):
+            urls = importlib.reload(core.urls)
+        self.addCleanup(importlib.reload, core.urls)
+        with self.assertRaises(Resolver404):
+            resolve("/media/videos/other-original.mp4", urlconf=urls)
+
+    # --- ORIGINALS ---
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_original_is_deleted_after_successful_conversion(self, mock_run):
+        video = Video.objects.create(
+            title="Convert", description="d", category="Comedy", owner=self.alice,
+            video_file=self._write("videos/convert.mp4", b"ORIGINAL"),
+        )
+        original_path = os.path.join(self.media_root, "videos", "convert.mp4")
+
+        convert_video(video.id)
+
+        video.refresh_from_db()
+        self.assertEqual(video.resolutions.count(), 3)
+        self.assertFalse(os.path.exists(original_path))
+        self.assertFalse(video.video_file)
+
+    @patch("video_app.api.tasks.subprocess.run", side_effect=Exception("ffmpeg failed"))
+    def test_original_is_kept_when_conversion_fails(self, mock_run):
+        video = Video.objects.create(
+            title="Broken", description="d", category="Comedy", owner=self.alice,
+            video_file=self._write("videos/broken.mp4", b"ORIGINAL"),
+        )
+
+        convert_video(video.id)
+
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
+        self.assertTrue(os.path.exists(os.path.join(self.media_root, "videos", "broken.mp4")))
+        self.assertEqual(video.video_file.name, "videos/broken.mp4")

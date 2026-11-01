@@ -24,6 +24,9 @@ class VideoSerializer(serializers.ModelSerializer):
     resolutions = VideoResolutionSerializer(many=True, read_only=True)
     thumbnail_url = serializers.SerializerMethodField()
     user_progress = serializers.SerializerMethodField()
+    # Derived from the owner, which the server sets; clients cannot send it.
+    visibility = serializers.SerializerMethodField()
+    is_own = serializers.SerializerMethodField()
 
     class Meta:
         model = Video
@@ -39,7 +42,24 @@ class VideoSerializer(serializers.ModelSerializer):
             "current_resolution",
             "resolutions",
             "user_progress",
+            "visibility",
+            "is_own",
         ]
+
+    def get_visibility(self, obj):
+        """
+        Return "public" for standard videos and "private" for uploads.
+        """
+        return "public" if obj.is_standard else "private"
+
+    def get_is_own(self, obj):
+        """
+        Return True if the current user uploaded the video.
+        """
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.owner_id == request.user.id
 
     def validate_video_file(self, value):
         """

@@ -352,3 +352,22 @@ class LogoutView(views.APIView):
         response.delete_cookie("access_token", path="/")
         response.delete_cookie("refresh_token", path="/")
         return response
+
+
+class MeView(views.APIView):
+    """
+    API view to return the logged-in account and its role.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response(
+            {
+                "id": user.id,
+                "email": user.email,
+                "role": "admin" if user.is_staff else "member",
+            },
+            status=status.HTTP_200_OK,
+        )

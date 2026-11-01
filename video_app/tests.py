@@ -41,6 +41,17 @@ class VideoAppIntegrationTests(APITestCase):
             content_type="video/mp4",
         )
 
+        # Admin client for actions that only admins may perform (VFX-26)
+        self.admin = CustomUser.objects.create_user(
+            username="video_admin",
+            email="video-admin@test.de",
+            password=self.raw_password,
+            is_active=True,
+            is_staff=True,
+        )
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(user=self.admin)
+
         # Another video for listing
         self.other_video = Video.objects.create(
             title="Second Video",
@@ -124,7 +135,7 @@ class VideoAppIntegrationTests(APITestCase):
     def test_patch_video_success(self):
         url = f"/api/video/{self.other_video.pk}/"
         data = {"description": "Updated description"}
-        response = self.client.patch(url, data)
+        response = self.admin_client.patch(url, data)
         self.assertEqual(response.status_code, 200)
         self.other_video.refresh_from_db()
         self.assertEqual(self.other_video.description, "Updated description")
@@ -137,7 +148,7 @@ class VideoAppIntegrationTests(APITestCase):
 
     def test_patch_video_invalid_data(self):
         url = f"/api/video/{self.other_video.pk}/"
-        response = self.client.patch(url, {"category": ""})
+        response = self.admin_client.patch(url, {"category": ""})
         self.assertEqual(response.status_code, 200)
         self.other_video.refresh_from_db()
         self.assertIn(self.other_video.category, ["", "Action"])
@@ -169,7 +180,7 @@ class VideoAppIntegrationTests(APITestCase):
     # --- CLEAR CACHE ---
     def test_clear_cache_success(self):
         url = "/api/clear-cache/"
-        response = self.client.post(url)
+        response = self.admin_client.post(url)
         self.assertEqual(response.status_code, 200)
         self.assertIn("status", response.data)
 
@@ -216,7 +227,7 @@ class VideoAppIntegrationTests(APITestCase):
 
     def test_patch_video_no_data(self):
         url = f"/api/video/{self.other_video.pk}/"
-        response = self.client.patch(url, {})
+        response = self.admin_client.patch(url, {})
         self.assertEqual(response.status_code, 200)
 
     def test_list_videos_empty(self):
@@ -449,3 +460,179 @@ class VideoAppIntegrationTests(APITestCase):
         url = f"/api/video/{self.other_video.id}/999p/index.m3u8"
         response = self.client.get(url)
         self.assertEqual(response.status_code, 404)
+
+
+class VideoOwnershipTests(APITestCase):
+    """
+    Roles and ownership (VFX-26).
+
+    Standard videos have no owner and are visible to every logged-in account.
+    Uploads by members are private: only the owner and admins can see or change them.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.admin = CustomUser.objects.create_user(
+            username="admin", email="admin@test.de", password="pw", is_active=True, is_staff=True
+        )
+        self.alice = CustomUser.objects.create_user(
+            username="alice", email="alice@test.de", password="pw", is_active=True
+        )
+        self.bob = CustomUser.objects.create_user(
+            username="bob", email="bob@test.de", password="pw", is_active=True
+        )
+        self.standard = Video.objects.create(
+            title="Standard", description="Catalog video", category="Action"
+        )
+        self.alice_video = Video.objects.create(
+            title="Alice upload", description="Private", category="Comedy", owner=self.alice
+        )
+        self.admin_client = self._client_for(self.admin)
+        self.alice_client = self._client_for(self.alice)
+        self.bob_client = self._client_for(self.bob)
+
+    def _client_for(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client
+
+    def _upload(self, client, title="New upload", **extra):
+        video_file = SimpleUploadedFile("clip.mp4", b"fake content", content_type="video/mp4")
+        data = {"title": title, "description": "d", "category": "Comedy", "video_file": video_file}
+        data.update(extra)
+        return client.post("/api/upload/", data, format="multipart")
+
+    def _titles(self, response):
+        return {video["title"] for video in response.data}
+
+    # --- UPLOAD ---
+    def test_member_upload_is_owned_by_member(self):
+        response = self._upload(self.bob_client, "Bob upload")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Video.objects.get(title="Bob upload").owner, self.bob)
+
+    def test_admin_upload_becomes_standard_video(self):
+        response = self._upload(self.admin_client, "New standard")
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(Video.objects.get(title="New standard").owner)
+
+    def test_owner_cannot_be_set_by_client(self):
+        self._upload(self.bob_client, "Spoofed", owner=self.alice.pk)
+        self.assertEqual(Video.objects.get(title="Spoofed").owner, self.bob)
+
+    # --- LIST ---
+    def test_member_sees_standard_and_own_videos(self):
+        response = self.alice_client.get("/api/video/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._titles(response), {"Standard", "Alice upload"})
+
+    def test_member_does_not_see_foreign_uploads(self):
+        response = self.bob_client.get("/api/video/")
+        self.assertEqual(self._titles(response), {"Standard"})
+
+    def test_cached_list_does_not_leak_foreign_uploads(self):
+        self.alice_client.get("/api/video/")
+        self.admin_client.get("/api/video/")
+        response = self.bob_client.get("/api/video/")
+        self.assertEqual(self._titles(response), {"Standard"})
+
+    def test_admin_sees_all_videos(self):
+        response = self.admin_client.get("/api/video/")
+        self.assertEqual(self._titles(response), {"Standard", "Alice upload"})
+
+    def test_list_marks_visibility_and_ownership(self):
+        response = self.alice_client.get("/api/video/")
+        by_title = {video["title"]: video for video in response.data}
+        self.assertEqual(by_title["Standard"]["visibility"], "public")
+        self.assertFalse(by_title["Standard"]["is_own"])
+        self.assertEqual(by_title["Alice upload"]["visibility"], "private")
+        self.assertTrue(by_title["Alice upload"]["is_own"])
+
+    # --- DETAIL, STREAM, CONVERSION PROGRESS ---
+    def test_foreign_private_video_is_not_found(self):
+        VideoResolution.objects.create(
+            original_video=self.alice_video,
+            resolution="720p",
+            converted_file="media/hls/vid/index.m3u8",
+        )
+        urls = [
+            f"/api/video/{self.alice_video.pk}/",
+            f"/api/video/{self.alice_video.pk}/720p/index.m3u8",
+            f"/api/conversion-progress/{self.alice_video.pk}/",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.bob_client.get(url).status_code, 404)
+
+    def test_owner_and_admin_can_open_private_video(self):
+        url = f"/api/video/{self.alice_video.pk}/"
+        self.assertEqual(self.alice_client.get(url).status_code, 200)
+        self.assertEqual(self.admin_client.get(url).status_code, 200)
+
+    # --- PATCH ---
+    def test_member_cannot_change_standard_video(self):
+        response = self.bob_client.patch(f"/api/video/{self.standard.pk}/", {"title": "Hacked"})
+        self.assertEqual(response.status_code, 403)
+        self.standard.refresh_from_db()
+        self.assertEqual(self.standard.title, "Standard")
+
+    def test_member_cannot_change_foreign_upload(self):
+        response = self.bob_client.patch(f"/api/video/{self.alice_video.pk}/", {"title": "Hacked"})
+        self.assertEqual(response.status_code, 404)
+
+    def test_owner_can_change_own_upload(self):
+        response = self.alice_client.patch(f"/api/video/{self.alice_video.pk}/", {"title": "Renamed"})
+        self.assertEqual(response.status_code, 200)
+        self.alice_video.refresh_from_db()
+        self.assertEqual(self.alice_video.title, "Renamed")
+
+    def test_owner_cannot_be_changed_by_patch(self):
+        self.alice_client.patch(f"/api/video/{self.alice_video.pk}/", {"owner": self.bob.pk})
+        self.alice_video.refresh_from_db()
+        self.assertEqual(self.alice_video.owner, self.alice)
+
+    def test_patch_does_not_put_private_video_into_cache(self):
+        self.alice_client.patch(f"/api/video/{self.alice_video.pk}/", {"title": "Renamed"})
+        response = self.bob_client.get("/api/video/")
+        self.assertEqual(self._titles(response), {"Standard"})
+
+    # --- DELETE ---
+    def test_owner_can_delete_own_upload(self):
+        response = self.alice_client.delete(f"/api/video/{self.alice_video.pk}/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Video.objects.filter(pk=self.alice_video.pk).exists())
+
+    def test_member_cannot_delete_foreign_upload(self):
+        response = self.bob_client.delete(f"/api/video/{self.alice_video.pk}/")
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Video.objects.filter(pk=self.alice_video.pk).exists())
+
+    def test_member_cannot_delete_standard_video(self):
+        response = self.bob_client.delete(f"/api/video/{self.standard.pk}/")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Video.objects.filter(pk=self.standard.pk).exists())
+
+    def test_admin_can_delete_any_video(self):
+        self.assertEqual(self.admin_client.delete(f"/api/video/{self.standard.pk}/").status_code, 204)
+        self.assertEqual(self.admin_client.delete(f"/api/video/{self.alice_video.pk}/").status_code, 204)
+
+    # --- ACCOUNT DELETION ---
+    def test_hard_delete_removes_uploads(self):
+        response = self.admin_client.delete(f"/api/admin/delete-account/{self.alice.pk}/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Video.objects.filter(pk=self.alice_video.pk).exists())
+        self.assertTrue(Video.objects.filter(pk=self.standard.pk).exists())
+
+    def test_soft_delete_keeps_uploads_for_admin(self):
+        response = self.alice_client.delete("/api/delete-account/", {"confirm": True}, format="json")
+        self.assertEqual(response.status_code, 204)
+        response = self.admin_client.get(f"/api/video/{self.alice_video.pk}/")
+        self.assertEqual(response.status_code, 200)
+
+    # --- ADMIN ENDPOINTS ---
+    def test_member_cannot_clear_cache(self):
+        self.assertEqual(self.bob_client.post("/api/clear-cache/").status_code, 403)
+
+    def test_member_cannot_open_django_rq(self):
+        response = self.bob_client.get("/api/django-rq/")
+        self.assertNotEqual(response.status_code, 200)

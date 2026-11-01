@@ -41,6 +41,18 @@ class Video(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default="processing"
     )
+    # Empty owner = standard video (visible to every account); set owner = private upload.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="uploads",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
+
+    @property
+    def is_standard(self):
+        return self.owner_id is None
 
     def __str__(self):
         return self.title

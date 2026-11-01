@@ -171,9 +171,9 @@ def _get_hls_file_path(base_path, filename):
     # Only playlists and segments, and only inside the folder of this resolution (VFX-30).
     if not filename.endswith((".m3u8", ".ts")):
         raise Http404("Invalid file")
-    base_path = os.path.abspath(base_path)
-    file_path = os.path.abspath(os.path.join(base_path, filename))
-    if os.path.commonpath([base_path, file_path]) != base_path:
+    base_path = os.path.realpath(base_path)
+    file_path = os.path.realpath(os.path.join(base_path, filename))
+    if not file_path.startswith(base_path + os.sep):
         raise Http404("Invalid path")
     if not os.path.exists(file_path):
         raise Http404("File not found")

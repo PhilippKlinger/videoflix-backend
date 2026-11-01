@@ -1,4 +1,6 @@
+import json
 import os
+import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
@@ -13,6 +15,21 @@ from unittest.mock import mock_open, patch, MagicMock
 from video_app.api.tasks import convert_video
 from video_app.api import tasks, utils
 from video_app.api.utils import STANDARD_VIDEOS_CACHE_KEY
+
+MP4_FORMAT = "mov,mp4,m4a,3gp,3g2,mj2"
+
+
+def ffprobe_output(format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0):
+    """
+    Fake result of the ffprobe process; tests replace only the process call.
+    """
+    data = {
+        "streams": [{"codec_type": "video"}] if has_video else [],
+        "format": {"format_name": format_name, "duration": duration},
+    }
+    return subprocess.CompletedProcess(
+        args=["ffprobe"], returncode=returncode, stdout=json.dumps(data), stderr=""
+    )
 
 
 class VideoAppIntegrationTests(APITestCase):
@@ -66,7 +83,8 @@ class VideoAppIntegrationTests(APITestCase):
         )
 
     # --- UPLOAD ---
-    def test_upload_video_success(self):
+    @patch("video_app.api.utils.subprocess.run", return_value=ffprobe_output())
+    def test_upload_video_success(self, mock_run):
         url = "/api/upload/"
         video_file = SimpleUploadedFile(
             "test.mp4", b"fake content", content_type="video/mp4"
@@ -495,6 +513,9 @@ class VideoOwnershipTests(APITestCase):
         self.admin_client = self._client_for(self.admin)
         self.alice_client = self._client_for(self.alice)
         self.bob_client = self._client_for(self.bob)
+        probe = patch("video_app.api.utils.subprocess.run", return_value=ffprobe_output())
+        probe.start()
+        self.addCleanup(probe.stop)
 
     def _client_for(self, user):
         client = APIClient()
@@ -681,3 +702,128 @@ class VideoOwnershipTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f"owner__id__exact={self.alice.pk}")
         self.assertNotContains(response, f"owner__id__exact={self.bob.pk}")
+
+
+class UploadValidationTests(APITestCase):
+    """
+    Upload checks and quota (VFX-27, masterplan G6).
+
+    Members may keep 2 videos at once; each video at most 50 MB and 2 minutes, MP4 or MOV.
+    Admin uploads are standard videos and have no quota.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.member = CustomUser.objects.create_user(
+            username="member", email="member@test.de", password="pw", is_active=True
+        )
+        self.admin = CustomUser.objects.create_user(
+            username="admin", email="admin@test.de", password="pw", is_active=True, is_staff=True
+        )
+        self.member_client = APIClient()
+        self.member_client.force_authenticate(user=self.member)
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(user=self.admin)
+        probe = patch("video_app.api.utils.subprocess.run", return_value=ffprobe_output())
+        self.mock_run = probe.start()
+        self.addCleanup(probe.stop)
+
+    def _upload(self, client=None, name="clip.mp4", content=b"fake content", title="Clip"):
+        video_file = SimpleUploadedFile(name, content, content_type="video/mp4")
+        data = {"title": title, "description": "d", "category": "Comedy", "video_file": video_file}
+        return (client or self.member_client).post("/api/upload/", data, format="multipart")
+
+    def _own_video(self, title):
+        return Video.objects.create(title=title, description="d", category="Comedy", owner=self.member)
+
+    # --- FILE TYPE ---
+    def test_mp4_is_accepted(self):
+        self.assertEqual(self._upload(name="clip.mp4").status_code, 201)
+
+    def test_mov_is_accepted(self):
+        self.assertEqual(self._upload(name="clip.MOV").status_code, 201)
+
+    def test_other_extension_is_rejected(self):
+        for name in ["clip.avi", "clip.mkv"]:
+            with self.subTest(name=name):
+                response = self._upload(name=name)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("video_file", response.data)
+
+    def test_container_that_is_not_mp4_or_mov_is_rejected(self):
+        self.mock_run.return_value = ffprobe_output(format_name="matroska,webm")
+        response = self._upload(name="renamed.mp4")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+
+    def test_file_ffprobe_cannot_read_is_rejected(self):
+        self.mock_run.return_value = ffprobe_output(returncode=1)
+        response = self._upload(name="broken.mp4")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+
+    def test_file_without_video_stream_is_rejected(self):
+        self.mock_run.return_value = ffprobe_output(has_video=False)
+        response = self._upload(name="audio-only.mp4")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+
+    # --- SIZE AND DURATION ---
+    def test_file_over_50_mb_is_rejected_before_ffprobe(self):
+        response = self._upload(content=b"0" * (50 * 1024 * 1024 + 1))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+        self.mock_run.assert_not_called()
+
+    def test_video_of_exactly_two_minutes_is_accepted(self):
+        self.mock_run.return_value = ffprobe_output(duration="120.0")
+        self.assertEqual(self._upload().status_code, 201)
+
+    def test_video_over_two_minutes_is_rejected(self):
+        self.mock_run.return_value = ffprobe_output(duration="120.5")
+        response = self._upload()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+
+    def test_ffprobe_reads_the_uploaded_file_and_temp_copy_is_removed(self):
+        self._upload()
+        command = self.mock_run.call_args.args[0]
+        self.assertEqual(command[0], "ffprobe")
+        self.assertTrue(command[-1].endswith(".mp4"))
+        self.assertFalse(os.path.exists(command[-1]))
+
+    def test_missing_ffprobe_rejects_upload(self):
+        self.mock_run.side_effect = FileNotFoundError("ffprobe")
+        response = self._upload()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+
+    # --- QUOTA ---
+    def test_member_may_have_two_videos_at_once(self):
+        self._own_video("First")
+        self.assertEqual(self._upload(title="Second").status_code, 201)
+
+    def test_third_video_is_rejected_before_ffprobe(self):
+        self._own_video("First")
+        self._own_video("Second")
+        response = self._upload(title="Third")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.data)
+        self.assertFalse(Video.objects.filter(title="Third").exists())
+        self.mock_run.assert_not_called()
+
+    def test_deleting_a_video_frees_a_slot(self):
+        first = self._own_video("First")
+        self._own_video("Second")
+        self.assertEqual(self.member_client.delete(f"/api/video/{first.pk}/").status_code, 204)
+        self.assertEqual(self._upload(title="Third").status_code, 201)
+
+    def test_standard_videos_do_not_count_for_members(self):
+        for title in ["Standard 1", "Standard 2", "Standard 3"]:
+            Video.objects.create(title=title, description="d", category="Action")
+        self.assertEqual(self._upload().status_code, 201)
+
+    def test_admin_has_no_quota(self):
+        for title in ["One", "Two", "Three"]:
+            with self.subTest(title=title):
+                self.assertEqual(self._upload(self.admin_client, title=title).status_code, 201)

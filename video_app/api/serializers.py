@@ -4,6 +4,12 @@ Serializers for video management and playback tracking.
 
 from rest_framework import serializers
 from video_app.models import Video, VideoProgress, VideoResolution
+from .utils import (
+    ALLOWED_UPLOAD_EXTENSIONS,
+    MAX_UPLOAD_SIZE,
+    MAX_VIDEO_DURATION_SECONDS,
+    probe_video,
+)
 
 
 class VideoResolutionSerializer(serializers.ModelSerializer):
@@ -63,12 +69,34 @@ class VideoSerializer(serializers.ModelSerializer):
 
     def validate_video_file(self, value):
         """
-        Validate that the uploaded file is a supported video format.
+        Validate type, size and duration of an uploaded video (VFX-27).
+        Cheap checks first, ffprobe only for files that pass them.
         """
         ext = value.name.split(".")[-1].lower()
-        if ext not in ["mp4", "mov", "avi", "mkv"]:
-            raise serializers.ValidationError("Unsupported file type.")
+        if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            raise serializers.ValidationError("Only MP4 or MOV files are allowed.")
+        if value.size > MAX_UPLOAD_SIZE:
+            raise serializers.ValidationError("The file must not be larger than 50 MB.")
+        self._validate_video_content(value)
         return value
+
+    def _validate_video_content(self, value):
+        """
+        Check the real container, a video stream and the duration with ffprobe.
+        """
+        probe = probe_video(value)
+        if not probe or not probe.get("streams"):
+            raise serializers.ValidationError("The file is not a readable video.")
+        video_format = probe.get("format", {})
+        format_names = video_format.get("format_name", "").split(",")
+        if not set(format_names) & set(ALLOWED_UPLOAD_EXTENSIONS):
+            raise serializers.ValidationError("Only MP4 or MOV files are allowed.")
+        try:
+            duration = float(video_format["duration"])
+        except (KeyError, TypeError, ValueError):
+            raise serializers.ValidationError("The file is not a readable video.")
+        if duration > MAX_VIDEO_DURATION_SECONDS:
+            raise serializers.ValidationError("The video must not be longer than 2 minutes.")
 
     def validate(self, data):
         """

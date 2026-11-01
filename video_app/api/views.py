@@ -16,7 +16,7 @@ from accounts_app.api.utils import is_admin
 from video_app.models import Video
 from .permissions import can_change_video, visible_videos
 from .serializers import VideoSerializer
-from .utils import STANDARD_VIDEOS_CACHE_KEY
+from .utils import MAX_UPLOADS_PER_ACCOUNT, STANDARD_VIDEOS_CACHE_KEY
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
 
@@ -43,6 +43,12 @@ class VideoUploadView(views.APIView):
 
     def post(self, request):
         cache_key = STANDARD_VIDEOS_CACHE_KEY
+        # Quota first, so files over the limit are not probed at all (VFX-27).
+        if not is_admin(request.user) and request.user.uploads.count() >= MAX_UPLOADS_PER_ACCOUNT:
+            return Response(
+                {"detail": "Upload limit reached. Delete one of your videos first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = VideoSerializer(data=request.data, context={"request": request})
         if serializer.is_valid():
             # Admin uploads become standard videos, all others stay private.

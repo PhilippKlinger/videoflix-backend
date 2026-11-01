@@ -3,7 +3,7 @@ cffi==2.0.0
 click==8.3.0
 colorama==0.4.6
 coverage==7.10.7
-croniter==6.0.0
+croniter==6.2.4
 cryptography==50.0.2
 diff-match-patch==20241021
 Django==5.2.18

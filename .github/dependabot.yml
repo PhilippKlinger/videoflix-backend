@@ -11,6 +11,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    # Stay on the Django LTS line; the next LTS is upgraded on purpose.
+    ignore:
+      - dependency-name: "django"
+        update-types: ["version-update:semver-major"]
 
   # Pinned action SHAs in .github/workflows
   - package-ecosystem: "github-actions"
@@ -31,3 +35,7 @@ updates:
       default-days: 14
     commit-message:
       prefix: "chore(deps)"
+    # Python 3.13 is the chosen version; a newer one is a planned decision.
+    ignore:
+      - dependency-name: "python"
+        versions: [">= 3.14"]

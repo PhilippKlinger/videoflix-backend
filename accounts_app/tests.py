@@ -4,6 +4,9 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from accounts_app.models import CustomUser
 from django.utils import timezone
+from django.contrib.auth.models import AnonymousUser
+from django.test import TestCase
+from accounts_app.api.utils import is_admin
 
 
 class AccountsIntegrationTests(APITestCase):
@@ -333,3 +336,49 @@ class AccountsIntegrationTests(APITestCase):
         url = f"/api/admin/restore-account/99999/"
         response = self.client.post(url)
         self.assertEqual(response.status_code, 404)
+
+
+class MeEndpointTests(APITestCase):
+    """
+    /api/me/ returns the logged-in account and its role (VFX-26).
+    """
+
+    def setUp(self):
+        self.admin = CustomUser.objects.create_user(
+            username="me_admin", email="me-admin@test.de", password="pw", is_active=True, is_staff=True
+        )
+        self.member = CustomUser.objects.create_user(
+            username="me_member", email="me-member@test.de", password="pw", is_active=True
+        )
+
+    def test_me_requires_login(self):
+        self.assertEqual(self.client.get("/api/me/").status_code, 401)
+
+    def test_me_returns_member_role(self):
+        self.client.force_authenticate(user=self.member)
+        response = self.client.get("/api/me/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["email"], "me-member@test.de")
+        self.assertEqual(response.data["role"], "member")
+
+    def test_me_returns_admin_role(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get("/api/me/")
+        self.assertEqual(response.data["role"], "admin")
+
+
+class IsAdminHelperTests(TestCase):
+    """
+    is_admin(user) is the single place that decides the admin role (VFX-26).
+    """
+
+    def test_staff_account_is_admin(self):
+        user = CustomUser(username="helper_admin", email="helper-admin@test.de", is_staff=True)
+        self.assertTrue(is_admin(user))
+
+    def test_member_is_not_admin(self):
+        user = CustomUser(username="helper_member", email="helper-member@test.de")
+        self.assertFalse(is_admin(user))
+
+    def test_anonymous_user_is_not_admin(self):
+        self.assertFalse(is_admin(AnonymousUser()))

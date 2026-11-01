@@ -15,6 +15,7 @@ from .utils import (
     build_output_filename,
     get_ffmpeg_hls_command,
     is_valid_video_extension,
+    STANDARD_VIDEOS_CACHE_KEY,
     get_ffmpeg_thumbnail_command,
 )
 
@@ -170,5 +171,4 @@ def update_video_cache():
     """
     Delete the video list cache to trigger refresh.
     """
-    cache_key = "all_videos"
-    cache.delete(cache_key)
+    cache.delete(STANDARD_VIDEOS_CACHE_KEY)

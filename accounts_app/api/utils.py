@@ -84,3 +84,10 @@ def encode_uid(user):
     Encode user ID as a base64 string for use in URLs.
     """
     return base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+
+
+def is_admin(user):
+    """
+    Return True if the user has the admin role (staff account).
+    """
+    return user.is_staff

@@ -16,6 +16,12 @@ from video_app.api.tasks import convert_video
 from video_app.api import tasks, utils
 from video_app.api.utils import STANDARD_VIDEOS_CACHE_KEY
 
+# Admin pages need static files; the manifest only exists after collectstatic (prod image).
+PLAIN_STATIC_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
 MP4_FORMAT = "mov,mp4,m4a,3gp,3g2,mj2"
 
 
@@ -687,12 +693,14 @@ class VideoOwnershipTests(APITestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith("/admin/login/"))
 
+    @override_settings(STORAGES=PLAIN_STATIC_STORAGES)
     def test_admin_can_open_django_rq(self):
         self.client.force_login(self.admin)
         response = self.client.get("/api/django-rq/")
         self.assertEqual(response.status_code, 200)
 
     # --- DJANGO ADMIN ---
+    @override_settings(STORAGES=PLAIN_STATIC_STORAGES)
     def test_admin_owner_filter_lists_only_accounts_with_uploads(self):
         superuser = CustomUser.objects.create_superuser(
             username="root", email="root@test.de", password="pw"

@@ -27,7 +27,7 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 
 ## Tech Stack
 
-- **Python 3.12+**
+- **Python 3.13**
 - **Django 5**
 - **Django REST Framework**
 - **PostgreSQL**
@@ -119,18 +119,14 @@ docker compose --profile dev exec web sh -lc "
   python -m coverage run manage.py test && coverage report
 "
 
-# Tests im Container (PROD-Profile):
-docker compose --profile prod exec web-prod sh -lc "
-  python -m coverage run manage.py test && coverage report
-"
-
 # Logs:
 docker compose logs -f web       # dev
 docker compose logs -f web-prod  # prod
 
-# Minimal Update-Flow
-docker compose --profile dev exec web sh -lc "pip install -U -r requirements.txt"
-docker compose --profile dev exec web sh -lc "pip freeze > requirements.txt"
+# Dependencies: requirements.txt (runtime, used by the prod image) and
+# requirements-dev.txt (test and debug tools, used by the dev profile).
+# Dependabot keeps the pins up to date; after a change rebuild the image:
+docker compose --profile dev up -d --build
 docker compose --profile dev exec web sh -lc "
   python manage.py check &&
   python manage.py makemigrations --check --dry-run &&

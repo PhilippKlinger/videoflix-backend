@@ -233,6 +233,9 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=7),
 }
 
+# drf-yasg: use the current renderer formats without the old "." prefix.
+SWAGGER_USE_COMPAT_RENDERERS = False
+
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True

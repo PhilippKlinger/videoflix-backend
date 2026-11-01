@@ -10,6 +10,7 @@ from .views import (
     VideoListView,
     VideoDetailView,
     VideoClearCache,
+    VideoThumbnailView,
 )
 
 urlpatterns = [
@@ -20,6 +21,11 @@ urlpatterns = [
         "conversion-progress/<int:video_id>/",
         VideoConversionProgressView.as_view(),
         name="conversion-progress",
+    ),
+    path(
+        "video/<int:video_id>/thumbnail/",
+        VideoThumbnailView.as_view(),
+        name="video-thumbnail",
     ),
     path(
         "video/<int:video_id>/<str:resolution>/<str:filename>",

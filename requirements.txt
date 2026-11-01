@@ -3,7 +3,7 @@ cffi==2.0.0
 click==8.3.0
 colorama==0.4.6
 coverage==7.10.7
-croniter==6.0.0
+croniter==6.2.4
 cryptography==50.0.2
 diff-match-patch==20241021
 Django==5.2.18
@@ -32,10 +32,10 @@ python-dotenv==1.2.4
 pytz==2026.5
 PyYAML==6.0.3
 redis==6.4.0
-rq==2.6.0
+rq==2.12.0
 six==1.17.0
 sqlparse==0.6.0
 tablib==3.10.0
 tzdata==2025.2
 uritemplate==4.2.0
-whitenoise==6.11.0
+whitenoise==6.12.0

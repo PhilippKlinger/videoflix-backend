@@ -62,7 +62,7 @@ class VideoAppIntegrationTests(APITestCase):
         )
 
         login_data = {"email": self.user.email, "password": self.raw_password}
-        response = self.client.post("/api/login/", login_data)
+        response = self.client.post("/api/login/", login_data, format="json")
 
         print("LOGIN RESPONSE:", response.data)
         self.assertEqual(response.status_code, 200)
@@ -957,6 +957,34 @@ class MediaProtectionTests(APITestCase):
         self.addCleanup(importlib.reload, core.urls)
         with self.assertRaises(Resolver404):
             resolve("/media/videos/other-original.mp4", urlconf=urls)
+
+    def test_api_does_not_expose_media_paths(self):
+        # VFX-48: no dead /media/ links, no internal paths or original file names.
+        Video.objects.filter(pk=self.video.pk).update(video_file="videos/secret-name.mp4")
+        responses = {
+            "detail": self.alice_client.get(f"/api/video/{self.video.pk}/").data,
+            "list": next(v for v in self.alice_client.get("/api/video/").data if v["id"] == self.video.pk),
+        }
+        for name, data in responses.items():
+            with self.subTest(response=name):
+                self.assertNotIn("video_file", data)
+                self.assertNotIn("converted_file", data["resolutions"][0])
+                self.assertEqual(data["resolutions"][0]["resolution"], "720p")
+                self.assertNotIn("/media/", str(data))
+                self.assertNotIn("secret-name", str(data))
+
+    @patch("video_app.api.utils.subprocess.run", return_value=ffprobe_output())
+    def test_video_file_cannot_be_replaced_by_patch(self, mock_run):
+        # VFX-48: a replaced original would never be converted or deleted (quota bypass).
+        Video.objects.filter(pk=self.video.pk).update(video_file="videos/clip.mp4")
+        new_file = SimpleUploadedFile("other.mp4", b"fake content", content_type="video/mp4")
+        response = self.alice_client.patch(
+            f"/api/video/{self.video.pk}/", {"video_file": new_file}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("video_file", response.data)
+        self.video.refresh_from_db()
+        self.assertEqual(self.video.video_file.name, "videos/clip.mp4")
 
     # --- ORIGINALS ---
     @patch("video_app.api.tasks.subprocess.run")

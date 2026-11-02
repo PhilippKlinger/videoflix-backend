@@ -4,6 +4,7 @@ Views for authentication, account activation, password reset, and account manage
 
 import base64
 from rest_framework import views, status
+from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -103,6 +104,8 @@ class CustomLoginCookieView(views.APIView):
     throttle_scope = "login"
     # No authentication here: an old or expired cookie must not block a new login.
     authentication_classes = []
+    # JSON only: a foreign page can submit a form cross-site, but not JSON (login CSRF).
+    parser_classes = [JSONParser]
 
     def post(self, request, *args, **kwargs):
         serializer = CustomLoginCookieSerializer(

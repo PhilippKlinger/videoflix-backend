@@ -16,11 +16,12 @@ from .utils import (
 class VideoResolutionSerializer(serializers.ModelSerializer):
     """
     Serializer for VideoResolution model.
+    Without file paths: streams are only served through the HLS endpoint (VFX-48).
     """
 
     class Meta:
         model = VideoResolution
-        fields = ["id", "original_video", "resolution", "converted_file"]
+        fields = ["id", "original_video", "resolution"]
 
 
 class VideoSerializer(serializers.ModelSerializer):
@@ -37,6 +38,8 @@ class VideoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Video
+        # video_file is upload-only: /media/ is not served and the path is internal (VFX-48).
+        extra_kwargs = {"video_file": {"write_only": True}}
         fields = [
             "id",
             "created_at",
@@ -73,6 +76,9 @@ class VideoSerializer(serializers.ModelSerializer):
         Validate type, size and duration of an uploaded video (VFX-27).
         Cheap checks first, ffprobe only for files that pass them.
         """
+        if self.instance is not None:
+            # A replaced original would never be converted or deleted (VFX-48).
+            raise serializers.ValidationError("The video file cannot be replaced.")
         ext = value.name.split(".")[-1].lower()
         if ext not in ALLOWED_UPLOAD_EXTENSIONS:
             raise serializers.ValidationError("Only MP4 or MOV files are allowed.")

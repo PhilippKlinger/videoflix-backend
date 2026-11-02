@@ -54,7 +54,7 @@ class AccountsIntegrationTests(APITestCase):
 
     def authenticate_with_cookies(self, email, password):
         response = self.client.post(
-            "/api/login/", {"email": email, "password": password}
+            "/api/login/", {"email": email, "password": password}, format="json"
         )
         self.assertEqual(response.status_code, 200)
         self.client.cookies["access_token"] = response.cookies.get("access_token").value
@@ -102,32 +102,32 @@ class AccountsIntegrationTests(APITestCase):
     def test_login_success(self):
         url = "/api/login/"
         data = {"email": "user@test.de", "password": "User123!"}
-        response = self.client.post(url, data)
+        response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, 200)
         self.assertIn("access_token", response.cookies)
 
     def test_login_wrong_password(self):
         url = "/api/login/"
         data = {"email": "user@test.de", "password": "falsch"}
-        response = self.client.post(url, data)
+        response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_login_missing_fields(self):
         url = "/api/login/"
         data = {"email": "user@test.de"}
-        response = self.client.post(url, data)
+        response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_login_inactive_user(self):
         url = "/api/login/"
         data = {"email": "inactive@test.de", "password": "Inactive123!"}
-        response = self.client.post(url, data)
+        response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_login_soft_deleted_user(self):
         url = "/api/login/"
         data = {"email": "deleted@test.de", "password": "Deleted123!"}
-        response = self.client.post(url, data)
+        response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, 400)
 
     # --- ACTIVATION ---
@@ -433,6 +433,25 @@ class CookieAndCsrfTests(APITestCase):
     def test_login_works_with_existing_cookie_and_without_csrf_token(self):
         self._login()
         self._login()
+
+    def test_login_rejects_form_post(self):
+        # Login CSRF: a foreign page can submit an HTML form but cannot send JSON cross-site.
+        response = self.client.post(
+            "/api/login/",
+            {"email": self.user.email, "password": self.password},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 415)
+        self.assertNotIn("access_token", response.cookies)
+
+    def test_login_rejects_urlencoded_post(self):
+        response = self.client.post(
+            "/api/login/",
+            f"email={self.user.email}&password={self.password}",
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertEqual(response.status_code, 415)
+        self.assertNotIn("access_token", response.cookies)
 
     # --- CSRF ---
     def test_cookie_request_without_csrf_token_is_rejected(self):

@@ -1,4 +1,7 @@
 import base64
+from django.conf import settings
+from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
@@ -18,6 +21,8 @@ class AccountsIntegrationTests(APITestCase):
     """
 
     def setUp(self):
+        # Throttle counters live in the cache (VFX-29); each test starts fresh.
+        cache.clear()
         # Create admin
         self.admin = CustomUser.objects.create_user(
             username="admin",
@@ -394,6 +399,7 @@ class CookieAndCsrfTests(APITestCase):
     """
 
     def setUp(self):
+        cache.clear()
         self.password = "Secret123!"
         self.user = CustomUser.objects.create_user(
             username="csrf_user", email="csrf@test.de", password=self.password, is_active=True
@@ -455,3 +461,57 @@ class CookieAndCsrfTests(APITestCase):
         client = APIClient(enforce_csrf_checks=True)
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.user)}")
         self.assertEqual(client.post("/api/logout/").status_code, 200)
+
+
+class ThrottlingTests(APITestCase):
+    """
+    Rate limits for anonymous auth endpoints (VFX-29).
+
+    Login: 5 per minute per IP. Endpoints that send mail share 5 per hour per IP.
+    The client IP is only taken from X-Forwarded-For when a trusted proxy is configured.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def _login(self, **extra):
+        return self.client.post(
+            "/api/login/", {"email": "nobody@test.de", "password": "wrong"}, format="json", **extra
+        )
+
+    def test_login_is_limited_per_ip(self):
+        for _ in range(5):
+            self.assertEqual(self._login().status_code, 400)
+        self.assertEqual(self._login().status_code, 429)
+
+    def test_login_limit_is_per_ip(self):
+        for _ in range(5):
+            self._login(REMOTE_ADDR="10.0.0.1")
+        self.assertEqual(self._login(REMOTE_ADDR="10.0.0.2").status_code, 400)
+
+    def test_spoofed_forwarded_for_does_not_bypass_limit(self):
+        for i in range(5):
+            self._login(HTTP_X_FORWARDED_FOR=f"203.0.113.{i}")
+        self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.99").status_code, 429)
+
+    def test_behind_one_proxy_the_forwarded_client_ip_counts(self):
+        with override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}):
+            for _ in range(5):
+                self._login(HTTP_X_FORWARDED_FOR="203.0.113.1")
+            self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.1").status_code, 429)
+            self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.2").status_code, 400)
+
+    def test_mail_endpoints_share_an_hourly_limit(self):
+        requests = [
+            ("/api/password_reset/", {"email": "nobody@test.de"}),
+            ("/api/request-new-activation-link/", {"email": "nobody@test.de"}),
+            ("/api/password_reset/", {"email": "nobody@test.de"}),
+            ("/api/request-new-activation-link/", {"email": "nobody@test.de"}),
+            ("/api/register/", {"email": "invalid"}),
+        ]
+        for url, data in requests:
+            self.assertNotEqual(self.client.post(url, data, format="json").status_code, 429)
+        for url, data in requests:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.post(url, data, format="json").status_code, 429)

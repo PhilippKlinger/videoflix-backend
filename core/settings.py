@@ -74,6 +74,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Used by views with ScopedRateThrottle (VFX-29); counters live in the Redis cache.
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "5/min",
+        "auth_mail": "5/hour",
+        "upload": "10/hour",
+    },
+    # Number of reverse proxies in front of Django. 0 ignores X-Forwarded-For,
+    # so clients cannot fake their IP; behind Caddy it is 1.
+    "NUM_PROXIES": int(os.environ.get("TRUSTED_PROXY_COUNT", "0")),
 }
 
 AUTHENTICATION_BACKENDS = (

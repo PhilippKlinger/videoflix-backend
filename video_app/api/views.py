@@ -9,6 +9,7 @@ from rest_framework import views, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils.dateparse import parse_datetime
 
 from accounts_app.api.utils import is_admin
@@ -38,6 +39,9 @@ class VideoUploadView(views.APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    # Counts rejected uploads too: each check can run ffprobe for up to 30 s.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "upload"
     parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request):

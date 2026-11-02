@@ -6,6 +6,7 @@ import base64
 from rest_framework import views, status
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -34,6 +35,8 @@ class RegisterUserView(views.APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_mail"
 
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
@@ -97,6 +100,8 @@ class CustomLoginCookieView(views.APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
     # No authentication here: an old or expired cookie must not block a new login.
     authentication_classes = []
     # JSON only: a foreign page can submit a form cross-site, but not JSON (login CSRF).
@@ -166,6 +171,8 @@ class RequestNewActivationLinkView(views.APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_mail"
 
     def post(self, request):
         email = request.data.get("email")
@@ -196,6 +203,8 @@ class PasswordResetRequestView(views.APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_mail"
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)

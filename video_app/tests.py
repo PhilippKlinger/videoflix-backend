@@ -50,6 +50,8 @@ class VideoAppIntegrationTests(APITestCase):
     """
 
     def setUp(self):
+        # Throttle counters live in the cache (VFX-29); each test starts fresh.
+        cache.clear()
         self.unauthenticated_client = APIClient()
         self.raw_password = "testpw"
         self.user = CustomUser.objects.create_user(
@@ -1013,3 +1015,40 @@ class MediaProtectionTests(APITestCase):
         self.assertEqual(video.status, "failed")
         self.assertTrue(os.path.exists(os.path.join(self.media_root, "videos", "broken.mp4")))
         self.assertEqual(video.video_file.name, "videos/broken.mp4")
+
+
+class UploadThrottlingTests(APITestCase):
+    """
+    Upload rate limit per account (VFX-29, /secure 2026-11-02 S2).
+
+    Rejected uploads count too: each check can run ffprobe for up to 30 s.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.member = CustomUser.objects.create_user(
+            username="member", email="member@test.de", password="pw", is_active=True
+        )
+        self.member_client = APIClient()
+        self.member_client.force_authenticate(user=self.member)
+
+    def _upload(self, client):
+        video_file = SimpleUploadedFile("clip.avi", b"fake content", content_type="video/x-msvideo")
+        data = {"title": "Clip", "description": "d", "category": "Comedy", "video_file": video_file}
+        return client.post("/api/upload/", data, format="multipart")
+
+    def test_uploads_are_limited_per_account_including_rejected_ones(self):
+        for _ in range(10):
+            self.assertEqual(self._upload(self.member_client).status_code, 400)
+        self.assertEqual(self._upload(self.member_client).status_code, 429)
+
+    def test_upload_limit_is_per_account(self):
+        for _ in range(10):
+            self._upload(self.member_client)
+        other = CustomUser.objects.create_user(
+            username="other", email="other@test.de", password="pw", is_active=True
+        )
+        other_client = APIClient()
+        other_client.force_authenticate(user=other)
+        self.assertEqual(self._upload(other_client).status_code, 400)

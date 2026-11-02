@@ -34,7 +34,7 @@ def create_thumbnail(video_id):
         video_instance = Video.objects.get(id=video_id)
         input_file = video_instance.video_file
         if not input_file:
-            logger.warning("No file attached to the video instance.")
+            logger.warning("Video %s has no file attached.", video_id)
             set_video_failed(video_instance)
             return
 
@@ -45,7 +45,7 @@ def create_thumbnail(video_id):
 
         _run_thumbnail_command(input_path, output_path, video_instance, output_filename)
     except Exception as e:
-        logger.error(f"General error in create_thumbnail: {e}")
+        logger.error("General error in create_thumbnail for video %s: %s", video_id, type(e).__name__)
         if video_instance:
             set_video_failed(video_instance)
     finally:
@@ -63,10 +63,10 @@ def _run_thumbnail_command(input_path, output_path, video_instance, output_filen
             video_instance.thumbnail_url.save(
                 output_filename, ContentFile(f.read()), save=True
             )
-        logger.info(f"Thumbnail created and saved to {output_filename}")
+        logger.info("Thumbnail created for video %s.", video_instance.pk)
         video_instance.save()
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to create thumbnail: {e}")
+        logger.error("Failed to create thumbnail for video %s (exit code %s).", video_instance.pk, e.returncode)
         set_video_failed(video_instance)
 
 

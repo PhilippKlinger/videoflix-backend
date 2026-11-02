@@ -25,6 +25,15 @@ class JWTAuthenticationFromCookie(JWTAuthentication):
         self.enforce_csrf(request)
         return self.get_user(validated_token), validated_token
 
+    def get_user(self, validated_token):
+        """
+        Reject demo accounts after their lifetime, even before the cleanup ran (VFX-28).
+        """
+        user = super().get_user(validated_token)
+        if user.is_expired_demo:
+            raise exceptions.AuthenticationFailed("Demo has expired.", code="demo_expired")
+        return user
+
     def enforce_csrf(self, request):
         """
         Reject unsafe requests without a valid CSRF token, like DRF's SessionAuthentication.

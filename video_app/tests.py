@@ -4,8 +4,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+from io import StringIO
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
+from django.core.management import call_command
 from django.http import Http404
 from django.test import override_settings
 from django.urls import Resolver404, resolve, reverse
@@ -1052,3 +1054,39 @@ class UploadThrottlingTests(APITestCase):
         other_client = APIClient()
         other_client.force_authenticate(user=other)
         self.assertEqual(self._upload(other_client).status_code, 400)
+
+
+class DemoCleanupTests(APITestCase):
+    """
+    Expired demo accounts disappear with their uploads and files (VFX-28, G5).
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media_root)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+    def test_cleanup_deletes_demo_uploads_and_files(self):
+        demo = CustomUser.objects.create_user(
+            username="demo-x", email="demo-x@demo.invalid", is_active=True, is_demo=True
+        )
+        CustomUser.objects.filter(pk=demo.pk).update(
+            date_joined=datetime.now(dt_timezone.utc) - timedelta(hours=3)
+        )
+        path = os.path.join(self.media_root, "videos", "demo.mp4")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "wb") as f:
+            f.write(b"ORIGINAL")
+        with patch("video_app.api.signals.django_rq.get_queue"):
+            video = Video.objects.create(
+                title="Demo upload", description="d", category="Comedy",
+                owner=demo, video_file="videos/demo.mp4",
+            )
+
+        call_command("delete_expired_demos", stdout=StringIO())
+
+        self.assertFalse(Video.objects.filter(pk=video.pk).exists())
+        self.assertFalse(os.path.exists(path))

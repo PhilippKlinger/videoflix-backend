@@ -6,6 +6,11 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
 
+# Demo accounts expire 2 hours after they were started (masterplan E11).
+DEMO_LIFETIME = timedelta(hours=2)
+MAX_ACTIVE_DEMOS = 20
+
+
 class CustomUserManager(BaseUserManager):
     """Manager for CustomUser."""
     
@@ -40,6 +45,18 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
 
+    def active_demos(self):
+        """
+        Demo accounts that have not expired yet.
+        """
+        return self.filter(is_demo=True, date_joined__gt=timezone.now() - DEMO_LIFETIME)
+
+    def expired_demos(self):
+        """
+        Demo accounts past their lifetime, to be deleted by the cleanup command.
+        """
+        return self.filter(is_demo=True, date_joined__lte=timezone.now() - DEMO_LIFETIME)
+
 
 class CustomUser(AbstractUser):
     """
@@ -53,6 +70,7 @@ class CustomUser(AbstractUser):
         activation_code: Code for account activation and password reset.
         activation_code_expiry: Expiry datetime for the activation code.
         is_soft_deleted: If the account is soft deleted.
+        is_demo: Demo account started without mail; expires after DEMO_LIFETIME.
     """
     custom = models.CharField(max_length=500, blank=True, null=True)
     phone = models.CharField(max_length=50, blank=True, null=True)
@@ -61,6 +79,7 @@ class CustomUser(AbstractUser):
     activation_code = models.CharField(max_length=40, blank=True, null=True)
     activation_code_expiry = models.DateTimeField(blank=True, null=True)
     is_soft_deleted = models.BooleanField(default=False)
+    is_demo = models.BooleanField(default=False)
     
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
@@ -72,6 +91,13 @@ class CustomUser(AbstractUser):
         """
         self.activation_code = str(uuid.uuid4())
         self.activation_code_expiry = timezone.now() + timedelta(minutes=15)
+
+    @property
+    def is_expired_demo(self):
+        """
+        True if this is a demo account past its lifetime.
+        """
+        return self.is_demo and self.date_joined <= timezone.now() - DEMO_LIFETIME
 
     def __str__(self):
         """

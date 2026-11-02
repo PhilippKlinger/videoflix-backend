@@ -1,4 +1,8 @@
 import base64
+from datetime import timedelta
+from io import StringIO
+from django.core import mail
+from django.core.management import call_command
 from django.conf import settings
 from django.core.cache import cache
 from django.test import override_settings
@@ -534,3 +538,117 @@ class ThrottlingTests(APITestCase):
         for url, data in requests:
             with self.subTest(url=url):
                 self.assertEqual(self.client.post(url, data, format="json").status_code, 429)
+
+
+class DemoAccountTests(APITestCase):
+    """
+    Demo accounts (VFX-28, masterplan E11, G2, G5, G6).
+
+    One click, no mail, member rights, expires after 2 hours. At most 5 demos per hour
+    per IP and 20 active at once; a cleanup command hard-deletes expired demos with
+    their uploads.
+    """
+
+    url = "/api/demo/"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def _start(self, client=None, **extra):
+        return (client or self.client).post(self.url, {}, format="json", **extra)
+
+    def _demo(self, age=timedelta(0)):
+        email = f"demo-{CustomUser.objects.count()}@demo.invalid"
+        user = CustomUser.objects.create_user(
+            username=email, email=email, is_active=True, is_demo=True
+        )
+        CustomUser.objects.filter(pk=user.pk).update(date_joined=timezone.now() - age)
+        user.refresh_from_db()
+        return user
+
+    # --- START ---
+    def test_start_creates_demo_and_logs_in(self):
+        response = self._start()
+        self.assertEqual(response.status_code, 201)
+        for name in ["access_token", "refresh_token", "csrftoken"]:
+            self.assertTrue(response.cookies[name].value)
+        me = self.client.get("/api/me/")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.data["role"], "demo")
+        user = CustomUser.objects.get(pk=me.data["id"])
+        self.assertTrue(user.is_demo)
+        self.assertTrue(user.is_active)
+        self.assertFalse(user.has_usable_password())
+
+    def test_demo_cookies_expire_with_the_demo(self):
+        response = self._start()
+        self.assertLessEqual(int(response.cookies["refresh_token"]["max-age"]), 2 * 60 * 60)
+
+    def test_start_sends_no_mail(self):
+        self._start()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_start_rejects_form_post(self):
+        # Like login CSRF: a foreign page must not log visitors into a demo account.
+        for content_type in ["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"]:
+            with self.subTest(content_type=content_type):
+                response = self.client.post(self.url, "", content_type=content_type)
+                self.assertEqual(response.status_code, 415)
+        self.assertFalse(CustomUser.objects.filter(is_demo=True).exists())
+
+    def test_demo_cannot_log_in_with_password(self):
+        self._start()
+        user = CustomUser.objects.get(is_demo=True)
+        response = self.client.post(
+            "/api/login/", {"email": user.email, "password": ""}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    # --- LIMITS ---
+    def test_start_is_limited_per_ip(self):
+        for _ in range(5):
+            self.assertEqual(self._start(APIClient()).status_code, 201)
+        self.assertEqual(self._start(APIClient()).status_code, 429)
+
+    def test_at_most_20_active_demos(self):
+        for _ in range(20):
+            self._demo()
+        response = self._start()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(CustomUser.objects.filter(is_demo=True).count(), 20)
+
+    def test_expired_demos_do_not_count_as_active(self):
+        for _ in range(20):
+            self._demo(age=timedelta(hours=3))
+        self.assertEqual(self._start().status_code, 201)
+
+    # --- EXPIRY ---
+    def test_expired_demo_is_rejected_before_cleanup(self):
+        user = self._demo(age=timedelta(hours=2, minutes=1))
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(user)}")
+        self.assertEqual(client.get("/api/me/").status_code, 401)
+
+    def test_fresh_demo_is_accepted(self):
+        user = self._demo(age=timedelta(hours=1, minutes=59))
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(user)}")
+        self.assertEqual(client.get("/api/me/").status_code, 200)
+
+    # --- CLEANUP ---
+    def test_cleanup_deletes_only_expired_demos(self):
+        expired = self._demo(age=timedelta(hours=3))
+        fresh = self._demo(age=timedelta(hours=1))
+        old_member = CustomUser.objects.create_user(
+            username="member", email="member@test.de", is_active=True
+        )
+        CustomUser.objects.filter(pk=old_member.pk).update(
+            date_joined=timezone.now() - timedelta(days=30)
+        )
+        out = StringIO()
+        call_command("delete_expired_demos", stdout=out)
+        self.assertFalse(CustomUser.objects.filter(pk=expired.pk).exists())
+        self.assertTrue(CustomUser.objects.filter(pk=fresh.pk).exists())
+        self.assertTrue(CustomUser.objects.filter(pk=old_member.pk).exists())
+        self.assertIn("1", out.getvalue())

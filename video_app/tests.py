@@ -60,7 +60,7 @@ class VideoAppIntegrationTests(APITestCase):
         )
 
         login_data = {"email": self.user.email, "password": self.raw_password}
-        response = self.client.post("/api/login/", login_data)
+        response = self.client.post("/api/login/", login_data, format="json")
 
         print("LOGIN RESPONSE:", response.data)
         self.assertEqual(response.status_code, 200)

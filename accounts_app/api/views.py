@@ -3,7 +3,9 @@ Views for authentication, account activation, password reset, and account manage
 """
 
 import base64
+import secrets
 from rest_framework import views, status
+from rest_framework.exceptions import UnsupportedMediaType
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -12,7 +14,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 
-from accounts_app.models import CustomUser
+from accounts_app.models import DEMO_LIFETIME, MAX_ACTIVE_DEMOS, CustomUser
 from .serializers import (
     CustomLoginCookieSerializer,
     UserRegistrationSerializer,
@@ -126,6 +128,41 @@ class CustomLoginCookieView(views.APIView):
             return response
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DemoStartView(views.APIView):
+    """
+    Start a demo account with one click, without mail (VFX-28, masterplan E11).
+
+    The account has member rights, no usable password and expires after 2 hours.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "demo"
+
+    def post(self, request, *args, **kwargs):
+        # JSON only, also for an empty body: a foreign page could otherwise
+        # log visitors into a demo account with a plain HTML form.
+        if request.content_type.split(";")[0].strip() != "application/json":
+            raise UnsupportedMediaType(request.content_type)
+        if CustomUser.objects.active_demos().count() >= MAX_ACTIVE_DEMOS:
+            return Response(
+                {"detail": "All demo slots are in use. Please try again later."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        email = f"demo-{secrets.token_hex(8)}@demo.invalid"
+        user = CustomUser.objects.create_user(
+            username=email, email=email, password=None, is_active=True, is_demo=True
+        )
+        refresh = RefreshToken.for_user(user)
+        response = Response({"detail": "demo started"}, status=status.HTTP_201_CREATED)
+        lifetime = int(DEMO_LIFETIME.total_seconds())
+        set_jwt_cookie(response, "access_token", str(refresh.access_token), min(60 * 25, lifetime))
+        set_jwt_cookie(response, "refresh_token", str(refresh), lifetime)
+        get_token(request)
+        return response
 
 
 class CustomLoginCookieRefreshView(views.APIView):
@@ -364,7 +401,18 @@ class MeView(views.APIView):
             {
                 "id": user.id,
                 "email": user.email,
-                "role": "admin" if is_admin(user) else "member",
+                "role": _role(user),
             },
             status=status.HTTP_200_OK,
         )
+
+
+def _role(user):
+    """
+    Return the role of an account: admin, demo or member (masterplan G2).
+    """
+    if is_admin(user):
+        return "admin"
+    if user.is_demo:
+        return "demo"
+    return "member"

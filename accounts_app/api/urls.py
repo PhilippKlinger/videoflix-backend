@@ -6,6 +6,7 @@ from django.urls import path
 from .views import (
     CustomLoginCookieView,
     CustomLoginCookieRefreshView,
+    DemoStartView,
     HardDeleteAccountView,
     LogoutView,
     MeView,
@@ -21,6 +22,7 @@ from .views import (
 urlpatterns = [
     path('register/', RegisterUserView.as_view(), name='register-user'),
     path('login/', CustomLoginCookieView.as_view(), name='login-user'),
+    path('demo/', DemoStartView.as_view(), name='demo-start'),
     path('token/refresh/', CustomLoginCookieRefreshView.as_view(), name='login-user-refresh'),
     path('activate/<str:uid>/<str:token>/', ActivateAccountView.as_view(), name='activate_account'),
     path('request-new-activation-link/', RequestNewActivationLinkView.as_view(), name='request_new_activation_link'),

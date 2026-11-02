@@ -79,6 +79,7 @@ REST_FRAMEWORK = {
         "login": "5/min",
         "auth_mail": "5/hour",
         "upload": "10/hour",
+        "demo": "5/hour",
     },
     # Number of reverse proxies in front of Django. 0 ignores X-Forwarded-For,
     # so clients cannot fake their IP; behind Caddy it is 1.

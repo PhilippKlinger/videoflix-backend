@@ -22,7 +22,9 @@ from .utils import (
     send_password_reset_email,
     generate_activation_code,
     is_admin,
+    set_jwt_cookie,
 )
+from django.middleware.csrf import get_token
 
 
 class RegisterUserView(views.APIView):
@@ -94,6 +96,8 @@ class CustomLoginCookieView(views.APIView):
     """
 
     permission_classes = [AllowAny]
+    # No authentication here: an old or expired cookie must not block a new login.
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = CustomLoginCookieSerializer(
@@ -107,24 +111,10 @@ class CustomLoginCookieView(views.APIView):
                 {"detail": "login successfully"}, status=status.HTTP_200_OK
             )
 
-            response.set_cookie(
-                key="access_token",
-                value=str(refresh.access_token),
-                httponly=True,
-                secure=True,
-                samesite="None",
-                path="/",
-                max_age=60 * 25,
-            )
-            response.set_cookie(
-                key="refresh_token",
-                value=str(refresh),
-                httponly=True,
-                secure=True,
-                samesite="None",
-                path="/",
-                max_age=60 * 60 * 24 * 7,
-            )
+            set_jwt_cookie(response, "access_token", str(refresh.access_token), 60 * 25)
+            set_jwt_cookie(response, "refresh_token", str(refresh), 60 * 60 * 24 * 7)
+            # Sets the csrftoken cookie the frontend sends back as X-CSRFToken.
+            get_token(request)
             return response
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -136,6 +126,8 @@ class CustomLoginCookieRefreshView(views.APIView):
     """
 
     permission_classes = [AllowAny]
+    # No authentication here: the access cookie is usually expired when this is called.
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         refresh_token = request.COOKIES.get("refresh_token")
@@ -154,15 +146,7 @@ class CustomLoginCookieRefreshView(views.APIView):
                 {"message": "access token refreshed"}, status=status.HTTP_200_OK
             )
 
-            response.set_cookie(
-                key="access_token",
-                value=access_token,
-                httponly=True,
-                secure=True,
-                samesite="None",
-                path="/",
-                max_age=60 * 25,
-            )
+            set_jwt_cookie(response, "access_token", access_token, 60 * 25)
 
             return response
 
@@ -350,8 +334,8 @@ class LogoutView(views.APIView):
         response = Response(
             {"detail": "Logged out successfully."}, status=status.HTTP_200_OK
         )
-        response.delete_cookie("access_token", path="/")
-        response.delete_cookie("refresh_token", path="/")
+        response.delete_cookie("access_token", path="/", samesite="Strict")
+        response.delete_cookie("refresh_token", path="/", samesite="Strict")
         return response
 
 

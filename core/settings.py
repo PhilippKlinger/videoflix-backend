@@ -26,10 +26,8 @@ DEBUG = env_bool("DEBUG", "False")
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 
-# CORS
+# One origin for frontend and API (masterplan E6), so no CORS.
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "")
-CORS_ALLOW_CREDENTIALS = True
 
 # FRONTEND_URL
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
@@ -42,7 +40,6 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_rq",
-    "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
     "import_export",
@@ -57,7 +54,6 @@ if DEBUG:
 AUTH_USER_MODEL = "accounts_app.CustomUser"
 
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -69,7 +65,7 @@ MIDDLEWARE = [
 ]
 
 if DEBUG:
-    MIDDLEWARE.insert(3, "debug_toolbar.middleware.DebugToolbarMiddleware")
+    MIDDLEWARE.insert(2, "debug_toolbar.middleware.DebugToolbarMiddleware")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -113,7 +109,10 @@ WSGI_APPLICATION = "core.wsgi.application"
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 
 # Media files
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
@@ -240,11 +239,14 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    # Wenn JWT im Cookie: SameSite sinnvoll setzen (meist 'Lax', bei Cross-Site evtl. 'None')
-    CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", "Lax")
-    SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+    # One origin (masterplan E6): cookies never need to cross sites.
+    CSRF_COOKIE_SAMESITE = "Strict"
+    SESSION_COOKIE_SAMESITE = "Strict"
 
-    # HSTS optional, wenn dauerhaft HTTPS über NPM:
-    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0"))  # z.B. 31536000
+    # Caddy redirects to HTTPS; set True in production so Django enforces it as well.
+    SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", "False")
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0"))  # production: 31536000
+    # The HSTS preload list only accepts whole domains; Videoflix runs on a subdomain.
+    SILENCED_SYSTEM_CHECKS = ["security.W021"]
     SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", "True")
     SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", "False")

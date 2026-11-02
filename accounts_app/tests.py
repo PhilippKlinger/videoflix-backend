@@ -1,6 +1,7 @@
 import base64
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework import status
 from accounts_app.models import CustomUser
 from django.utils import timezone
@@ -382,3 +383,75 @@ class IsAdminHelperTests(TestCase):
 
     def test_anonymous_user_is_not_admin(self):
         self.assertFalse(is_admin(AnonymousUser()))
+
+
+class CookieAndCsrfTests(APITestCase):
+    """
+    JWT cookies and CSRF protection (VFX-07, masterplan E6).
+
+    Cookies are SameSite=Strict. Requests authenticated by cookie must also send the
+    CSRF token; requests with an Authorization header cannot be forged and need none.
+    """
+
+    def setUp(self):
+        self.password = "Secret123!"
+        self.user = CustomUser.objects.create_user(
+            username="csrf_user", email="csrf@test.de", password=self.password, is_active=True
+        )
+        self.client = APIClient(enforce_csrf_checks=True)
+
+    def _login(self):
+        response = self.client.post(
+            "/api/login/", {"email": self.user.email, "password": self.password}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def _delete_own_account(self, **extra):
+        return self.client.delete("/api/delete-account/", {"confirm": True}, format="json", **extra)
+
+    # --- COOKIES ---
+    def test_login_sets_strict_secure_httponly_cookies(self):
+        response = self._login()
+        for name in ["access_token", "refresh_token"]:
+            with self.subTest(cookie=name):
+                cookie = response.cookies[name]
+                self.assertEqual(cookie["samesite"], "Strict")
+                self.assertTrue(cookie["secure"])
+                self.assertTrue(cookie["httponly"])
+
+    def test_login_sets_csrf_cookie(self):
+        response = self._login()
+        self.assertTrue(response.cookies["csrftoken"].value)
+
+    def test_refresh_sets_strict_access_cookie(self):
+        self._login()
+        response = self.client.post("/api/token/refresh/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.cookies["access_token"]["samesite"], "Strict")
+
+    def test_login_works_with_existing_cookie_and_without_csrf_token(self):
+        self._login()
+        self._login()
+
+    # --- CSRF ---
+    def test_cookie_request_without_csrf_token_is_rejected(self):
+        self._login()
+        response = self._delete_own_account()
+        self.assertEqual(response.status_code, 403)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_soft_deleted)
+
+    def test_cookie_request_with_csrf_token_is_accepted(self):
+        token = self._login().cookies["csrftoken"].value
+        response = self._delete_own_account(HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(response.status_code, 204)
+
+    def test_safe_cookie_request_needs_no_csrf_token(self):
+        self._login()
+        self.assertEqual(self.client.get("/api/me/").status_code, 200)
+
+    def test_header_auth_needs_no_csrf_token(self):
+        client = APIClient(enforce_csrf_checks=True)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.user)}")
+        self.assertEqual(client.post("/api/logout/").status_code, 200)

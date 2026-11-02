@@ -91,3 +91,18 @@ def is_admin(user):
     Return True if the user has the admin role (staff account).
     """
     return user.is_staff
+
+
+def set_jwt_cookie(response, key, value, max_age):
+    """
+    Set a JWT cookie: not readable by JavaScript, HTTPS only, same site only (VFX-07).
+    """
+    response.set_cookie(
+        key=key,
+        value=value,
+        httponly=True,
+        secure=True,
+        samesite="Strict",
+        path="/",
+        max_age=max_age,
+    )

@@ -216,9 +216,14 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL")
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "formatters": {
+        # One JSON object per line, tokens in account links redacted (VFX-31).
+        "json": {"()": "core.json_logging.JsonFormatter"},
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
+            "formatter": "json",
         },
     },
     "root": {
@@ -244,6 +249,9 @@ SIMPLE_JWT = {
 
 # drf-yasg: use the current renderer formats without the old "." prefix.
 SWAGGER_USE_COMPAT_RENDERERS = False
+
+# Docker checks health over plain HTTP inside the network; a redirect would fail it (VFX-31).
+SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

@@ -22,16 +22,17 @@ def video_post_save(sender, instance, created, **kwargs):
     """
     Enqueue tasks to create thumbnail and convert video after video upload.
     """
-    logger.info(f"Video {instance.title} saved")
+    # IDs only: titles and file names are personal data (VFX-31).
+    logger.info("Video %s saved", instance.pk)
     if created:
         try:
-            logger.info(f"Video {instance.title} uploaded")
+            logger.info("Video %s uploaded", instance.pk)
             thumbnails_queue = django_rq.get_queue("default", autocommit=True)
             videos_queue = django_rq.get_queue("default", autocommit=True)
             thumbnails_queue.enqueue(create_thumbnail, instance.id)
             videos_queue.enqueue(convert_video, instance.id)
         except Exception as e:
-            logger.error(f"Failed to enqueue tasks: {e}")
+            logger.error("Failed to enqueue tasks for video %s: %s", instance.pk, type(e).__name__)
 
 
 @receiver(pre_delete, sender=Video)
@@ -51,9 +52,7 @@ def _delete_original_video_file(instance):
     """
     if instance.video_file and default_storage.exists(instance.video_file.name):
         default_storage.delete(instance.video_file.name)
-        logger.info(
-            f"Original video file {instance.video_file.name} deleted from storage."
-        )
+        logger.info("Original file of video %s deleted from storage.", instance.pk)
 
 
 def _delete_all_hls_and_collect_dirs(instance):
@@ -67,7 +66,7 @@ def _delete_all_hls_and_collect_dirs(instance):
             video_dirs.add(os.path.dirname(hls_dir))
             if os.path.exists(hls_dir):
                 shutil.rmtree(hls_dir, ignore_errors=True)
-                logger.info(f"HLS folder {hls_dir} deleted.")
+                logger.info("HLS folder of video %s (%s) deleted.", instance.pk, res.resolution)
     return video_dirs
 
 
@@ -79,9 +78,9 @@ def _delete_empty_video_dirs(video_dirs):
         try:
             if os.path.exists(vid_dir) and not os.listdir(vid_dir):
                 os.rmdir(vid_dir)
-                logger.info(f"Video directory {vid_dir} deleted (was empty).")
+                logger.info("Empty video directory deleted.")
         except Exception as e:
-            logger.error(f"Error deleting video directory {vid_dir}: {e}")
+            logger.error("Error deleting a video directory: %s", type(e).__name__)
 
 
 def _delete_thumbnail_file(instance):
@@ -90,4 +89,4 @@ def _delete_thumbnail_file(instance):
     """
     if instance.thumbnail_url and default_storage.exists(instance.thumbnail_url.name):
         default_storage.delete(instance.thumbnail_url.name)
-        logger.info(f"Thumbnail {instance.thumbnail_url.name} deleted from storage.")
+        logger.info("Thumbnail of video %s deleted from storage.", instance.pk)

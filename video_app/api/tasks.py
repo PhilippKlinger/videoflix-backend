@@ -91,18 +91,30 @@ def convert_video(video_id):
 
     output_base_dir = os.path.join(settings.MEDIA_ROOT, "hls", base_name)
     os.makedirs(output_base_dir, exist_ok=True)
-    _convert_to_all_resolutions(video_instance, input_file, base_name, output_base_dir)
+    if _convert_to_all_resolutions(video_instance, input_file, base_name, output_base_dir):
+        _delete_original_video(video_instance)
+
+
+def _delete_original_video(video_instance):
+    """
+    Delete the uploaded original once every resolution exists; only HLS is streamed (VFX-30).
+    """
+    video_instance.video_file.delete(save=False)
+    # update() instead of save(), so a thumbnail saved meanwhile is not overwritten.
+    Video.objects.filter(pk=video_instance.pk).update(video_file=None)
 
 
 def _convert_to_all_resolutions(video_instance, input_file, base_name, output_base_dir):
     """
     Loop through all target resolutions, convert and save each one.
+    Return True if every resolution was converted.
     """
     total_resolutions = len(RESOLUTIONS)
+    all_converted = True
     for index, (res_label, res_height) in enumerate(RESOLUTIONS):
         out_dir = os.path.join(output_base_dir, res_label)
         os.makedirs(out_dir, exist_ok=True)
-        _run_hls_command(
+        converted = _run_hls_command(
             video_instance,
             input_file,
             out_dir,
@@ -112,6 +124,8 @@ def _convert_to_all_resolutions(video_instance, input_file, base_name, output_ba
             index + 1,
             total_resolutions,
         )
+        all_converted = all_converted and converted
+    return all_converted
 
 
 def _run_hls_command(
@@ -126,6 +140,7 @@ def _run_hls_command(
 ):
     """
     Run ffmpeg to create HLS for a resolution, update DB and cache.
+    Return True on success.
     """
     command, playlist_path = get_ffmpeg_hls_command(
         default_storage.path(input_file.name), out_dir, base_name, res_height
@@ -144,8 +159,10 @@ def _run_hls_command(
             video_instance, progress_index, total_resolutions, res_label
         )
         update_video_cache()
+        return True
     except Exception as e:
         set_video_failed(video_instance)
+        return False
 
 
 def set_video_failed(video_instance):

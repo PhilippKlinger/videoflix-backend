@@ -3,8 +3,8 @@ set -e
 
 echo "Warte auf PostgreSQL auf $DB_HOST:$DB_PORT..."
 
-# -q für "quiet" (keine Ausgabe außer Fehlern)
-# Die Schleife läuft, solange pg_isready *nicht* erfolgreich ist (Exit-Code != 0)
+# -q for "quiet" (no output except errors)
+# Loop while pg_isready is *not* successful (exit code != 0)
 while ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -q; do
   echo "PostgreSQL ist nicht erreichbar - schlafe 1 Sekunde"
   sleep 1
@@ -13,13 +13,13 @@ echo "PostgreSQL ist bereit - fahre fort..."
 
 python manage.py collectstatic --noinput
 
-# Nur in Dev automatisch Migrationen erzeugen (Prod: migrations gehören ins Repo)
+# Create migrations automatically in dev only (prod: migrations belong in the repo)
 if [ "${RUN_MAKEMIGRATIONS:-0}" = "1" ]; then
   python manage.py makemigrations
 fi
 python manage.py migrate --noinput
 
-# Optionaler Superuser nur beim ersten Deploy
+# Optional superuser on the first deploy only
 if [ "${CREATE_SUPERUSER:-1}" = "1" ] && [ -z "${DJANGO_SUPERUSER_PASSWORD:-}" ]; then
   echo "DJANGO_SUPERUSER_PASSWORD not set, skipping superuser creation."
 elif [ "${CREATE_SUPERUSER:-1}" = "1" ]; then
@@ -34,7 +34,7 @@ password = os.environ['DJANGO_SUPERUSER_PASSWORD']
 
 if not User.objects.filter(username=username).exists():
     print(f"Creating superuser '{username}'...")
-    # Korrekter Aufruf: username hier übergeben
+    # Pass the username here
     User.objects.create_superuser(username=username, email=email, password=password)
     print(f"Superuser '{username}' created.")
 else:

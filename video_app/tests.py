@@ -204,6 +204,33 @@ class VideoAppIntegrationTests(APITestCase):
         self.assertIn("progress", response.data)
         self.assertIn("current_resolution", response.data)
 
+    def test_conversion_progress_reports_status(self):
+        # Without the status a failed conversion looks like "0 % processed" forever (VFX-35).
+        Video.objects.filter(pk=self.other_video.pk).update(status="failed")
+        response = self.client.get(f"/api/conversion-progress/{self.other_video.pk}/")
+        self.assertEqual(response.data["status"], "failed")
+
+    # --- STATUS ---
+    def test_list_and_detail_report_status(self):
+        Video.objects.filter(pk=self.other_video.pk).update(status="ready")
+        listed = self.client.get("/api/video/").data
+        self.assertEqual(listed[0]["status"], "ready")
+        detail = self.client.get(f"/api/video/{self.other_video.pk}/").data
+        self.assertEqual(detail["status"], "ready")
+
+    @patch("video_app.api.utils.subprocess.run", return_value=ffprobe_output())
+    def test_upload_ignores_client_status(self, mock_run):
+        data = {
+            "title": "Status Video",
+            "description": "Clients cannot set the status.",
+            "category": "Comedy",
+            "video_file": SimpleUploadedFile("test.mp4", b"fake content", content_type="video/mp4"),
+            "status": "ready",
+        }
+        response = self.client.post("/api/upload/", data, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Video.objects.get(title="Status Video").status, "processing")
+
     def test_conversion_progress_invalid_video(self):
         url = "/api/conversion-progress/99999/"
         response = self.client.get(url)

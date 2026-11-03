@@ -17,7 +17,7 @@ from video_app.models import Video
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def load_settings(**overrides):
+def load_settings(code="import core.settings", **overrides):
     """Import core.settings in a fresh interpreter with the given environment.
 
     Empty strings are passed on purpose: load_dotenv() never overrides existing
@@ -26,7 +26,7 @@ def load_settings(**overrides):
     env = {**os.environ, "SECRET_KEY": "test-only-key", "DB_PASSWORD": "test-only-password"}
     env.update(overrides)
     return subprocess.run(
-        [sys.executable, "-c", "import core.settings"],
+        [sys.executable, "-c", code],
         cwd=BASE_DIR,
         env=env,
         capture_output=True,
@@ -43,6 +43,36 @@ class SecretSettingsTests(SimpleTestCase):
         result = load_settings(DB_PASSWORD="")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("DB_PASSWORD must be set", result.stderr)
+
+
+class ThrottleRateSettingsTests(SimpleTestCase):
+    """Throttle rates can be raised per environment, e.g. for repeated E2E runs in dev (VFX-35)."""
+
+    SCOPES = ("LOGIN", "AUTH_MAIL", "UPLOAD", "DEMO")
+
+    def load_rates(self, **overrides):
+        # Empty values stand for "not set": load_dotenv() never overrides them.
+        env = {f"THROTTLE_RATE_{scope}": "" for scope in self.SCOPES}
+        env.update(overrides)
+        result = load_settings(
+            code="import json, core.settings as s; "
+            "print(json.dumps(s.REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']))",
+            **env,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_defaults_stay_strict(self):
+        self.assertEqual(
+            self.load_rates(),
+            {"login": "5/min", "auth_mail": "5/hour", "upload": "10/hour", "demo": "5/hour"},
+        )
+
+    def test_rates_come_from_the_environment(self):
+        rates = self.load_rates(THROTTLE_RATE_DEMO="100/hour", THROTTLE_RATE_UPLOAD="100/hour")
+        self.assertEqual(rates["demo"], "100/hour")
+        self.assertEqual(rates["upload"], "100/hour")
+        self.assertEqual(rates["login"], "5/min")
 
 
 class HealthEndpointTests(APITestCase):

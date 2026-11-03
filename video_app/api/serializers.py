@@ -40,6 +40,9 @@ class VideoSerializer(serializers.ModelSerializer):
         model = Video
         # video_file is upload-only: /media/ is not served and the path is internal (VFX-48).
         extra_kwargs = {"video_file": {"write_only": True}}
+        # Set by the conversion task only: processing, ready (at least one
+        # resolution is playable, others may still convert) or failed.
+        read_only_fields = ["status"]
         fields = [
             "id",
             "created_at",
@@ -50,6 +53,7 @@ class VideoSerializer(serializers.ModelSerializer):
             "thumbnail_url",
             "conversion_progress",
             "current_resolution",
+            "status",
             "resolutions",
             "user_progress",
             "visibility",

@@ -83,6 +83,19 @@ class AccountsIntegrationTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(CustomUser.objects.filter(email="neu@example.com").exists())
 
+    @override_settings(FRONTEND_URL="http://frontend.test")
+    def test_activation_mail_links_to_frontend_route(self):
+        data = {
+            "email": "neu@example.com",
+            "password": "NeuUser123!",
+            "confirmed_password": "NeuUser123!",
+        }
+        self.client.post("/api/register/", data)
+        user = CustomUser.objects.get(email="neu@example.com")
+        uid = base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertIn(f'href="http://frontend.test/activate/{uid}/{user.activation_code}"', html)
+
     def test_registration_passwords_do_not_match(self):
         url = "/api/register/"
         data = {
@@ -225,6 +238,14 @@ class AccountsIntegrationTests(APITestCase):
         data = {"email": "user@test.de"}
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 200)
+
+    @override_settings(FRONTEND_URL="http://frontend.test")
+    def test_password_reset_mail_links_to_frontend_route(self):
+        self.client.post("/api/password_reset/", {"email": "user@test.de"})
+        self.user.refresh_from_db()
+        uid = base64.urlsafe_b64encode(str(self.user.pk).encode()).decode()
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertIn(f'href="http://frontend.test/reset-password/{uid}/{self.user.activation_code}"', html)
 
     def test_password_reset_request_nonexistent(self):
         url = "/api/password_reset/"

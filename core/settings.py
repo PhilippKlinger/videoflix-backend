@@ -204,7 +204,8 @@ CACHES = {
     }
 }
 
-EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"
+# Dev can print mails to the container log instead of sending them.
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
 EMAIL_HOST = os.environ.get("EMAIL_HOST")
 EMAIL_PORT = os.environ.get("EMAIL_PORT")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS") == "True"

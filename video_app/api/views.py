@@ -75,6 +75,7 @@ class VideoConversionProgressView(views.APIView):
             {
                 "progress": video.conversion_progress,
                 "current_resolution": video.current_resolution,
+                "status": video.status,
             }
         )
 

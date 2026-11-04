@@ -96,6 +96,18 @@ class AccountsIntegrationTests(APITestCase):
         html = mail.outbox[0].alternatives[0][0]
         self.assertIn(f'href="http://frontend.test/activate/{uid}/{user.activation_code}"', html)
 
+    @override_settings(FRONTEND_URL="http://frontend.test")
+    def test_mail_logo_is_served_from_the_public_domain(self):
+        data = {
+            "email": "neu@example.com",
+            "password": "NeuUser123!",
+            "confirmed_password": "NeuUser123!",
+        }
+        self.client.post("/api/register/", data)
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertIn('src="http://frontend.test/static/img/logo.svg"', html)
+        self.assertNotIn("127.0.0.1", html)
+
     def test_registration_passwords_do_not_match(self):
         url = "/api/register/"
         data = {

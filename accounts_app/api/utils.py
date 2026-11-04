@@ -21,6 +21,13 @@ def generate_activation_code():
     return code, expiry
 
 
+def mail_logo_url():
+    """
+    Absolute logo URL for mails; frontend and API share one domain, so /static/ is served there.
+    """
+    return f"{settings.FRONTEND_URL}/static/img/logo.svg"
+
+
 def send_activation_email(user, request):
     """
     Send an activation email to the user.
@@ -33,6 +40,7 @@ def send_activation_email(user, request):
     to_email = [user.email]
     context = {
         "user": user,
+        "logo_url": mail_logo_url(),
         "button_url": activation_url,
         "button_text": "Activate account",
         "title": "Confirm your email",
@@ -57,6 +65,7 @@ def send_password_reset_email(user, request):
     to_email = [user.email]
     context = {
         "user": user,
+        "logo_url": mail_logo_url(),
         "button_url": reset_url,
         "button_text": "Reset password",
         "title": "Reset your Password",

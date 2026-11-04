@@ -1,0 +1,36 @@
+# Secrets and local configuration never go into the image
+.env
+.env.*
+!.env.*.template
+
+# Version control and CI
+.git
+.gitattributes
+.gitignore
+.gitleaksignore
+.github
+
+# Local Python environments and caches
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+test-coverage-results.txt
+
+# Editor settings
+.vscode
+.idea
+
+# Uploaded media and local collectstatic output (static is rebuilt in the image)
+media
+static/*
+!static/img
+
+# Container files themselves
+docker-compose*.yml
+*.log

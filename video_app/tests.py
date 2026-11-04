@@ -364,6 +364,12 @@ class VideoAppIntegrationTests(APITestCase):
         self.assertIn("input", cmd)
         self.assertIn("output", cmd)
 
+    def test_thumbnail_command_fits_the_tile_size(self):
+        # VFX-64: tiles show ~533x300, the hero is wider; 1280x720 covers both at 2x.
+        cmd = utils.get_ffmpeg_thumbnail_command("input", "output")
+        self.assertEqual(cmd[cmd.index("-s") + 1], "1280x720")
+        self.assertEqual(cmd[cmd.index("-q:v") + 1], "5")
+
     def test_get_ffmpeg_hls_command(self):
         cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "height", 720)
         self.assertIn("-vf", cmd)
@@ -959,8 +965,28 @@ class MediaProtectionTests(APITestCase):
     def test_owner_gets_own_thumbnail_privately(self):
         response = self.alice_client.get(f"/api/video/{self.video.pk}/thumbnail/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Cache-Control"], "private")
+        self.assertEqual(response["Cache-Control"], "private, max-age=86400")
         self.assertEqual(b"".join(response.streaming_content), b"JPEG")
+
+    def test_thumbnail_sends_last_modified(self):
+        response = self.alice_client.get(f"/api/video/{self.video.pk}/thumbnail/")
+        b"".join(response.streaming_content)
+        self.assertIn("Last-Modified", response)
+
+    def test_unchanged_thumbnail_is_not_sent_again(self):
+        first = self.alice_client.get(f"/api/video/{self.video.pk}/thumbnail/")
+        b"".join(first.streaming_content)
+        again = self.alice_client.get(
+            f"/api/video/{self.video.pk}/thumbnail/", HTTP_IF_MODIFIED_SINCE=first["Last-Modified"]
+        )
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(again["Cache-Control"], "private, max-age=86400")
+
+    def test_not_modified_still_checks_visibility(self):
+        response = self.bob_client.get(
+            f"/api/video/{self.video.pk}/thumbnail/", HTTP_IF_MODIFIED_SINCE="Sat, 01 Jan 2099 00:00:00 GMT"
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_standard_thumbnail_is_visible_to_every_member(self):
         response = self.bob_client.get(f"/api/video/{self.standard.pk}/thumbnail/")
@@ -1165,3 +1191,57 @@ class ImportCatalogCommandTests(APITestCase):
         output = self._import()
         self.assertEqual(Video.objects.count(), 3)
         self.assertIn("0 imported, 3 skipped", output)
+
+
+class ShrinkThumbnailsCommandTests(APITestCase):
+    """
+    VFX-64: scale existing Full HD thumbnails down; the original videos are gone after conversion.
+    """
+
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        os.makedirs(os.path.join(self.media, "thumbnails"))
+
+    def _video_with_thumbnail(self, title, size):
+        from PIL import Image
+
+        name = f"thumbnails/{title}.jpg"
+        Image.new("RGB", size, (200, 30, 30)).save(os.path.join(self.media, name), quality=95)
+        return Video.objects.create(title=title, description="d", category="Comedy", thumbnail_url=name)
+
+    def _shrink(self):
+        out = StringIO()
+        call_command("shrink_thumbnails", stdout=out)
+        return out.getvalue()
+
+    def _size_of(self, video):
+        from PIL import Image
+
+        with Image.open(os.path.join(self.media, video.thumbnail_url.name)) as image:
+            return image.size
+
+    def test_scales_full_hd_thumbnail_to_1280x720(self):
+        video = self._video_with_thumbnail("big", (1920, 1080))
+        output = self._shrink()
+        self.assertEqual(self._size_of(video), (1280, 720))
+        self.assertIn("1 shrunk", output)
+
+    def test_leaves_small_thumbnail_untouched(self):
+        video = self._video_with_thumbnail("small", (1280, 720))
+        path = os.path.join(self.media, video.thumbnail_url.name)
+        before = os.path.getmtime(path)
+        output = self._shrink()
+        self.assertEqual(os.path.getmtime(path), before)
+        self.assertIn("0 shrunk, 1 unchanged", output)
+
+    def test_reports_missing_file_and_continues(self):
+        Video.objects.create(title="gone", description="d", category="Comedy", thumbnail_url="thumbnails/gone.jpg")
+        Video.objects.create(title="none", description="d", category="Comedy")
+        video = self._video_with_thumbnail("big", (1920, 1080))
+        output = self._shrink()
+        self.assertEqual(self._size_of(video), (1280, 720))
+        self.assertIn("1 missing", output)

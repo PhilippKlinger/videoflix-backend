@@ -113,7 +113,6 @@ Control.system-ca-bundle
 GitHub.sublime-settings 
 
 # Docker
-.dockerignore
 # docker-compose.yml
 .docker.env
 

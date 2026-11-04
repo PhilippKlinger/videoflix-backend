@@ -65,7 +65,11 @@ docker compose --profile dev up -d --build -> local development
 docker compose --profile prod up -d --build -> production server
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
-🟢 All migrations, static/media setup, and superuser creation are handled by the entrypoint script.
+🟢 Migrations run when `web` starts; static files are built into the image.  
+🟢 `web` (Gunicorn) and `worker` (RQ, ffmpeg) run as separate containers from the same image.
+
+# 5. Create an admin account once (no default accounts in the image)
+docker compose --profile dev exec web python manage.py createsuperuser
 ```
 ---
 
@@ -120,8 +124,8 @@ docker compose --profile dev exec web sh -lc "
 "
 
 # Logs:
-docker compose logs -f web       # dev
-docker compose logs -f web-prod  # prod
+docker compose logs -f web worker            # dev
+docker compose logs -f web-prod worker-prod  # prod
 
 # Dependencies: requirements.txt (runtime, used by the prod image) and
 # requirements-dev.txt (test and debug tools, used by the dev profile).
@@ -133,11 +137,9 @@ docker compose --profile dev exec web sh -lc "
   python -m coverage run manage.py test && coverage report
 "
 
-# on Prod Server
-git pull
-docker compose --profile prod build --no-cache
-docker compose --profile prod run --rm web-prod python manage.py migrate
-docker compose --profile prod up -d
+# Production runs the published images via the videoflix-deploy repository.
+# Local check of the production image:
+docker compose --profile prod up -d --build
 
 **Media & Static files**  
 Uploaded videos and static files are persisted in Docker volumes.

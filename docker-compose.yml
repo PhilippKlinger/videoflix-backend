@@ -45,20 +45,51 @@ services:
       - redis
       - mailpit
 
+  worker:
+    # Dev profile: RQ worker for the video conversion, same image and code as web
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+      args:
+        REQUIREMENTS: requirements-dev.txt
+    command: ["worker"]
+    env_file: .env
+    container_name: videoflix_worker_dev
+    volumes:
+      - .:/app
+      - videoflix_media:/app/media
+    depends_on:
+      - db
+      - redis
+
   web-prod:
-    # Prod profile (no bind mount!)
+    # Prod profile: local check of the production image (the server uses videoflix-deploy)
     profiles: ["prod"]
     build:
       context: .
       dockerfile: backend.Dockerfile
     env_file: .env
     container_name: videoflix_backend_prod
-    # Mount persistent paths only:
+    # Static files are part of the image; only media is persisted
     volumes:
       - videoflix_media:/app/media
-      - videoflix_static:/app/static
     ports:
       - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  worker-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: ["worker"]
+    env_file: .env
+    container_name: videoflix_worker_prod
+    volumes:
+      - videoflix_media:/app/media
     depends_on:
       - db
       - redis

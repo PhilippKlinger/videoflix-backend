@@ -3,7 +3,9 @@ API views for video upload, listing, detail, conversion progress, cache, and HLS
 """
 
 import os
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponseNotModified
+from django.utils.http import http_date
+from django.views.static import was_modified_since
 from django.shortcuts import get_object_or_404
 from rest_framework import views, status
 from rest_framework.exceptions import PermissionDenied
@@ -224,6 +226,12 @@ class VideoThumbnailView(views.APIView):
         thumbnail = video.thumbnail_url
         if not thumbnail or not thumbnail.storage.exists(thumbnail.name):
             raise Http404("Thumbnail not found")
-        response = FileResponse(thumbnail.open("rb"), content_type="image/jpeg")
-        response["Cache-Control"] = "private"
+        modified = thumbnail.storage.get_modified_time(thumbnail.name).timestamp()
+        # Browsers keep thumbnails for a day and then revalidate with If-Modified-Since (VFX-65).
+        if was_modified_since(request.META.get("HTTP_IF_MODIFIED_SINCE"), modified):
+            response = FileResponse(thumbnail.open("rb"), content_type="image/jpeg")
+        else:
+            response = HttpResponseNotModified()
+        response["Last-Modified"] = http_date(modified)
+        response["Cache-Control"] = "private, max-age=86400"
         return response

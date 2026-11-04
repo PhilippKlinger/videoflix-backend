@@ -105,7 +105,8 @@ class AccountsIntegrationTests(APITestCase):
         }
         self.client.post("/api/register/", data)
         html = mail.outbox[0].alternatives[0][0]
-        self.assertIn('src="http://frontend.test/static/img/logo.svg"', html)
+        # Gmail and Outlook do not show SVG images in mails (VFX-69).
+        self.assertIn('src="http://frontend.test/static/img/logo.png"', html)
         self.assertNotIn("127.0.0.1", html)
 
     def test_registration_passwords_do_not_match(self):

@@ -44,6 +44,12 @@ def is_valid_video_extension(extension):
     return extension and extension.lower() in ["mp4", "mov", "avi", "mkv"]
 
 
+# Tiles show the thumbnail at about 533x300 and the hero is wider; 1280x720 stays sharp
+# for both on 2x screens while keeping files small (VFX-64).
+THUMBNAIL_SIZE = (1280, 720)
+THUMBNAIL_QUALITY = "5"
+
+
 def get_ffmpeg_thumbnail_command(input_path, output_path):
     """
     Return the ffmpeg command for creating a video thumbnail image.
@@ -57,9 +63,9 @@ def get_ffmpeg_thumbnail_command(input_path, output_path):
         "-vframes",
         "1",
         "-q:v",
-        "2",
+        THUMBNAIL_QUALITY,
         "-s",
-        "1920x1080",
+        f"{THUMBNAIL_SIZE[0]}x{THUMBNAIL_SIZE[1]}",
         output_path,
     ]
 

@@ -24,8 +24,9 @@ def generate_activation_code():
 def mail_logo_url():
     """
     Absolute logo URL for mails; frontend and API share one domain, so /static/ is served there.
+    PNG because Gmail and Outlook do not show SVG images in mails.
     """
-    return f"{settings.FRONTEND_URL}/static/img/logo.svg"
+    return f"{settings.FRONTEND_URL}/static/img/logo.png"
 
 
 def send_activation_email(user, request):

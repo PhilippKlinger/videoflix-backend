@@ -1117,3 +1117,51 @@ class DemoCleanupTests(APITestCase):
 
         self.assertFalse(Video.objects.filter(pk=video.pk).exists())
         self.assertFalse(os.path.exists(path))
+
+
+class ImportCatalogCommandTests(APITestCase):
+    """
+    VFX-62: fill the standard catalog from a folder of sample clips on the server.
+    """
+
+    def setUp(self):
+        self.source = tempfile.mkdtemp()
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.source, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        os.makedirs(os.path.join(self.source, "more clips"))
+        for name in ("golf_sports.mp4", "segelschiff_mstery.mp4", "more clips/bird_2.mp4", "notes.txt"):
+            with open(os.path.join(self.source, name), "wb") as f:
+                f.write(b"fake video")
+        queue = patch("video_app.api.signals.django_rq.get_queue")
+        self.queue = queue.start()
+        self.addCleanup(queue.stop)
+
+    def _import(self):
+        out = StringIO()
+        with override_settings(MEDIA_ROOT=self.media):
+            call_command("import_catalog", self.source, stdout=out)
+        return out.getvalue()
+
+    def test_imports_every_mp4_as_standard_video_with_category_from_the_name(self):
+        self._import()
+        videos = {v.title: v for v in Video.objects.all()}
+        self.assertEqual(set(videos), {"Golf", "Segelschiff", "Bird 2"})
+        self.assertEqual(videos["Golf"].category, "Sports")
+        self.assertEqual(videos["Segelschiff"].category, "Mystery")
+        self.assertEqual(videos["Bird 2"].category, "Documentary")
+        self.assertTrue(all(v.owner_id is None for v in videos.values()))
+        self.assertTrue(all(v.status == "processing" for v in videos.values()))
+
+    def test_copies_the_file_and_starts_the_conversion(self):
+        self._import()
+        video = Video.objects.get(title="Golf")
+        self.assertTrue(os.path.exists(os.path.join(self.media, video.video_file.name)))
+        enqueued = [c.args[0].__name__ for c in self.queue.return_value.enqueue.call_args_list]
+        self.assertEqual(enqueued.count("convert_video"), 3)
+
+    def test_running_twice_does_not_duplicate_videos(self):
+        self._import()
+        output = self._import()
+        self.assertEqual(Video.objects.count(), 3)
+        self.assertIn("0 imported, 3 skipped", output)

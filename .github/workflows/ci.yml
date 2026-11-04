@@ -100,3 +100,79 @@ jobs:
         run: |
           coverage run --source=. --omit="*/migrations/*,*/tests.py,manage.py" manage.py test
           coverage report --fail-under=89
+
+  image:
+    name: Build, scan and publish image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # BuildKit container driver: needed for the GitHub Actions layer cache.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Prepare image name
+        id: name
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OWNER_LOWER="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "ref=ghcr.io/${OWNER_LOWER}/videoflix-backend:${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build image with layer cache
+        env:
+          IMAGE: ${{ steps.name.outputs.ref }}
+        run: |
+          set -Eeuo pipefail
+          docker buildx build \
+            --file "backend.Dockerfile" \
+            --cache-from "type=gha,scope=videoflix-backend" \
+            --cache-to "type=gha,mode=max,scope=videoflix-backend" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "${IMAGE}" \
+            --load \
+            .
+
+      # Official Trivy image pinned by digest instead of a third-party action.
+      # Fails on critical findings that already have a fix.
+      - name: Scan image with Trivy
+        env:
+          IMAGE: ${{ steps.name.outputs.ref }}
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --no-progress --severity HIGH,CRITICAL --ignore-unfixed "${IMAGE}"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --no-progress --quiet --severity CRITICAL --ignore-unfixed --exit-code 1 "${IMAGE}"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${GHCR_TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      # The digest makes the reference immutable: the deploy repository pins exactly this build.
+      - name: Push image and record immutable reference
+        if: github.event_name == 'push'
+        env:
+          IMAGE: ${{ steps.name.outputs.ref }}
+        run: |
+          set -Eeuo pipefail
+          PUSH_OUTPUT="$(docker push "${IMAGE}")"
+          echo "${PUSH_OUTPUT}"
+          DIGEST="$(awk '/digest: sha256:/ {print $3}' <<< "${PUSH_OUTPUT}" | tail -n 1)"
+          [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "### Image" >> "${GITHUB_STEP_SUMMARY}"
+          echo '`'"${IMAGE}@${DIGEST}"'`' >> "${GITHUB_STEP_SUMMARY}"

@@ -1,9 +1,10 @@
 """
-Health check for Docker and the edge proxy (VFX-31).
+Health check for Docker and the edge proxy (VFX-31), public build information (VFX-50).
 """
 
 import logging
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db import connection
 from rest_framework import status, views
@@ -29,6 +30,19 @@ class HealthView(views.APIView):
         body = {"status": "ok" if healthy else "error", **checks}
         code = status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE
         return Response(body, status=code)
+
+
+class VersionView(views.APIView):
+    """
+    Report which commit is running and when its image was built. Nothing else is public here.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = []
+
+    def get(self, request):
+        return Response({"commit": settings.GIT_SHA, "build_time": settings.BUILD_TIME})
 
 
 def _check_database():

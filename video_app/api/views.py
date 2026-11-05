@@ -15,9 +15,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from django.utils.dateparse import parse_datetime
 
 from accounts_app.api.utils import is_admin
-from video_app.models import Video
+from video_app.models import Video, VideoProgress
 from .permissions import can_change_video, visible_videos
-from .serializers import VideoSerializer
+from .serializers import SharedVideoSerializer, VideoSerializer
 from .utils import MAX_UPLOADS_PER_ACCOUNT, STANDARD_VIDEOS_CACHE_KEY
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -107,6 +107,16 @@ class VideoListView(views.APIView):
         return Response(videos)
 
     def _get_standard_videos(self, request):
+        videos = self._get_cached_standard_videos(request)
+        progress = dict(
+            VideoProgress.objects.filter(user=request.user).values_list("video_id", "progress_seconds")
+        )
+        return [{**video, "user_progress": progress.get(video["id"], 0)} for video in videos]
+
+    def _get_cached_standard_videos(self, request):
+        """
+        The cache is shared by all accounts, so it only holds what is the same for everyone (VFX-44).
+        """
         cached_videos = cache.get(STANDARD_VIDEOS_CACHE_KEY)
         if cached_videos is not None:
             return cached_videos
@@ -115,7 +125,7 @@ class VideoListView(views.APIView):
             .prefetch_related("resolutions")
             .order_by("-created_at")
         )
-        serialized_data = VideoSerializer(
+        serialized_data = SharedVideoSerializer(
             videos, many=True, context={"request": request}
         ).data
         cache.set(STANDARD_VIDEOS_CACHE_KEY, serialized_data, timeout=300)

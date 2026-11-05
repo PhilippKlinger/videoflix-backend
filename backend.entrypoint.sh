@@ -1,7 +1,8 @@
 #!/bin/sh
 set -e
 
-# One process per container: "web" serves the API, "worker" runs the RQ queue.
+# One process per container: "web" serves the API, "worker" runs the conversion queue,
+# "mail-worker" runs the mail queue.
 # Any other command (e.g. "python manage.py createsuperuser") is passed through.
 
 wait_for_db() {
@@ -33,6 +34,10 @@ case "$1" in
   worker)
     wait_for_db
     exec python manage.py rqworker default
+    ;;
+  mail-worker)
+    wait_for_db
+    exec python manage.py rqworker mail
     ;;
   *)
     exec "$@"

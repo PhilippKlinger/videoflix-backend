@@ -21,9 +21,8 @@ from .serializers import (
     PasswordResetRequestSerializer,
     PasswordResetSerializer,
 )
+from .tasks import queue_activation_email, queue_password_reset_email
 from .utils import (
-    send_activation_email,
-    send_password_reset_email,
     generate_activation_code,
     is_admin,
     set_jwt_cookie,
@@ -48,7 +47,7 @@ class RegisterUserView(views.APIView):
                 generate_activation_code()
             )
             user.save()
-            send_activation_email(user, request)
+            queue_activation_email(user)
             return Response(
                 {"detail": "Please check your email to activate your account."},
                 status=status.HTTP_201_CREATED,
@@ -223,7 +222,7 @@ class RequestNewActivationLinkView(views.APIView):
                     generate_activation_code()
                 )
                 user.save()
-                send_activation_email(user, request)
+                queue_activation_email(user)
         except CustomUser.DoesNotExist:
             pass
         return Response(
@@ -253,7 +252,7 @@ class PasswordResetRequestView(views.APIView):
                     generate_activation_code()
                 )
                 user.save()
-                send_password_reset_email(user, request)
+                queue_password_reset_email(user)
             except CustomUser.DoesNotExist:
                 pass
             return Response(

@@ -185,6 +185,12 @@ class CustomLoginCookieRefreshView(views.APIView):
 
         try:
             refresh = RefreshToken(refresh_token)
+            # The token stays valid after deactivation, so the account is checked here (VFX-53).
+            if not CustomUser.objects.filter(pk=refresh["user_id"], is_active=True).exists():
+                return Response(
+                    {"detail": "Invalid or expired refresh token."},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
             access_token = str(refresh.access_token)
 
             response = Response(

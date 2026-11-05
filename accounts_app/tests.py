@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient, APITestCase
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework import status
 from accounts_app.models import CustomUser
 from django.utils import timezone
@@ -686,3 +686,36 @@ class DemoAccountTests(APITestCase):
         self.assertTrue(CustomUser.objects.filter(pk=fresh.pk).exists())
         self.assertTrue(CustomUser.objects.filter(pk=old_member.pk).exists())
         self.assertIn("1", out.getvalue())
+
+
+class RefreshInactiveAccountTests(APITestCase):
+    """
+    A refresh token must not outlive the account it belongs to (VFX-53).
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.user = CustomUser.objects.create_user(
+            username="user", email="user@test.de", password="User123!", is_active=True
+        )
+        self.client.cookies["refresh_token"] = str(RefreshToken.for_user(self.user))
+
+    def refresh(self):
+        return self.client.post("/api/token/refresh/")
+
+    def test_active_account_gets_a_new_access_token(self):
+        response = self.refresh()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access_token", response.cookies)
+
+    def test_deactivated_account_gets_no_new_access_token(self):
+        CustomUser.objects.filter(pk=self.user.pk).update(is_active=False)
+        response = self.refresh()
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("access_token", response.cookies)
+
+    def test_deleted_account_gets_no_new_access_token(self):
+        self.user.delete()
+        response = self.refresh()
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("access_token", response.cookies)

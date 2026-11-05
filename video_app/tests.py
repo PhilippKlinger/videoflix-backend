@@ -370,6 +370,18 @@ class VideoAppIntegrationTests(APITestCase):
         self.assertEqual(cmd[cmd.index("-s") + 1], "1280x720")
         self.assertEqual(cmd[cmd.index("-q:v") + 1], "5")
 
+    def test_ffmpeg_commands_may_only_read_local_files(self):
+        # Uploads are untrusted: a crafted file must not make ffmpeg or ffprobe open URLs.
+        commands = [
+            utils.get_ffmpeg_thumbnail_command("input", "output"),
+            utils.get_ffmpeg_hls_command("input", "output", "base", 720)[0],
+            utils.get_ffprobe_command("input"),
+        ]
+        for cmd in commands:
+            position = cmd.index("-protocol_whitelist")
+            self.assertEqual(cmd[position + 1], "file")
+            self.assertLess(position, cmd.index("input"))
+
     def test_get_ffmpeg_hls_command(self):
         cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "height", 720)
         self.assertIn("-vf", cmd)

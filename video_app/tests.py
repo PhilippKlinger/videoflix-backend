@@ -309,7 +309,7 @@ class VideoAppIntegrationTests(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
-        cache.set(STANDARD_VIDEOS_CACHE_KEY, [{"title": "From Cache"}], timeout=300)
+        cache.set(STANDARD_VIDEOS_CACHE_KEY, [{"id": 1, "title": "From Cache"}], timeout=300)
         response = self.client.get(url)
         self.assertEqual(response.data[0]["title"], "From Cache")
 
@@ -1070,6 +1070,55 @@ class MediaProtectionTests(APITestCase):
         self.assertEqual(video.status, "failed")
         self.assertTrue(os.path.exists(os.path.join(self.media_root, "videos", "broken.mp4")))
         self.assertEqual(video.video_file.name, "videos/broken.mp4")
+
+
+class VideoListCachePrivacyTests(APITestCase):
+    """
+    The shared cache must not carry the progress of whoever filled it (VFX-44).
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.first = CustomUser.objects.create_user(
+            username="first", email="first@test.de", password="First123!", is_active=True
+        )
+        self.second = CustomUser.objects.create_user(
+            username="second", email="second@test.de", password="Second123!", is_active=True
+        )
+        with patch("video_app.api.signals.django_rq.get_queue"):
+            self.video = Video.objects.create(title="Standard", description="d", category="c")
+        VideoProgress.objects.create(user=self.first, video=self.video, progress_seconds=42)
+
+    def progress_of(self, user):
+        self.client.force_authenticate(user=user)
+        response = self.client.get("/api/video/")
+        self.assertEqual(response.status_code, 200)
+        return response.data[0]["user_progress"]
+
+    def test_each_person_gets_their_own_progress_from_the_cache(self):
+        self.assertEqual(self.progress_of(self.first), 42)
+        self.assertEqual(self.progress_of(self.second), 0)
+        self.assertEqual(self.progress_of(self.first), 42)
+
+    def test_cache_entry_holds_no_progress(self):
+        self.progress_of(self.first)
+        cached = cache.get(STANDARD_VIDEOS_CACHE_KEY)
+        self.assertEqual(len(cached), 1)
+        self.assertNotIn("user_progress", cached[0])
+
+    def test_progress_comes_from_one_query_for_a_cached_list(self):
+        self.progress_of(self.first)
+        with patch("video_app.api.signals.django_rq.get_queue"):
+            for number in range(3):
+                video = Video.objects.create(title=f"Standard {number}", description="d", category="c")
+                VideoProgress.objects.create(user=self.first, video=video, progress_seconds=number)
+        cache.delete(STANDARD_VIDEOS_CACHE_KEY)
+        self.progress_of(self.first)
+        self.client.force_authenticate(user=self.first)
+        # Own uploads check and progress, nothing per video.
+        with self.assertNumQueries(2):
+            self.client.get("/api/video/")
 
 
 class UploadThrottlingTests(APITestCase):

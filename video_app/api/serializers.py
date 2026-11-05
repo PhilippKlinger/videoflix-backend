@@ -149,3 +149,12 @@ class VideoSerializer(serializers.ModelSerializer):
             return progress.progress_seconds
         except VideoProgress.DoesNotExist:
             return 0
+
+
+class SharedVideoSerializer(VideoSerializer):
+    """
+    Video without per-account progress, for the cache shared by all accounts (VFX-44).
+    """
+
+    class Meta(VideoSerializer.Meta):
+        fields = [field for field in VideoSerializer.Meta.fields if field != "user_progress"]

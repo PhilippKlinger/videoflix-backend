@@ -179,6 +179,10 @@ USE_I18N = True
 
 USE_TZ = True
 
+# Set in the image from build args; "unknown" outside of an image build (VFX-50).
+GIT_SHA = os.environ.get("GIT_SHA") or "unknown"
+BUILD_TIME = os.environ.get("BUILD_TIME") or "unknown"
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
@@ -191,6 +195,14 @@ RQ_QUEUES = {
         'PORT': os.environ.get("REDIS_PORT", default=6379),
         'DB': os.environ.get("REDIS_DB", default=0),
         'DEFAULT_TIMEOUT': 900,
+        'REDIS_CLIENT_KWARGS': {},
+    },
+    # Own queue: only the mail worker needs a route to the outside, ffmpeg stays without one.
+    'mail': {
+        'HOST': os.environ.get("REDIS_HOST", default="redis"),
+        'PORT': os.environ.get("REDIS_PORT", default=6379),
+        'DB': os.environ.get("REDIS_DB", default=0),
+        'DEFAULT_TIMEOUT': 60,
         'REDIS_CLIENT_KWARGS': {},
     },
 }

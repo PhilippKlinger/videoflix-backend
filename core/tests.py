@@ -118,6 +118,23 @@ class HealthEndpointTests(APITestCase):
             self.assertEqual(client.get(self.url).status_code, 200)
 
 
+class VersionEndpointTests(APITestCase):
+    """
+    Public build information, nothing else (VFX-50).
+    """
+
+    @override_settings(GIT_SHA="abc1234", BUILD_TIME="2026-11-05T12:00:00Z")
+    def test_returns_commit_and_build_time_without_login(self):
+        response = self.client.get("/api/version/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {"commit": "abc1234", "build_time": "2026-11-05T12:00:00Z"})
+
+    def test_path_without_slash_redirects_to_it(self):
+        response = self.client.get("/api/version")
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(response["Location"], "/api/version/")
+
+
 class JsonLogFormatterTests(SimpleTestCase):
     """
     One JSON object per log line, without personal data or secrets (VFX-31).

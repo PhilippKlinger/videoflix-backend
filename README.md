@@ -145,7 +145,7 @@ docker compose --profile prod up -d --build
 Uploaded videos and static files are persisted in Docker volumes.
 
 **Environment variables**  
-Sensitive settings are loaded from `.env` (see `.env.example` for reference).
+Sensitive settings are loaded from `.env` (see `.env.dev.template` and `.env.prod.template` for reference).
 
 **Admin UI**  
 Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) (credentials set in `.env`).

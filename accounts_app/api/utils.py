@@ -29,7 +29,7 @@ def mail_logo_url():
     return f"{settings.FRONTEND_URL}/static/img/logo.png"
 
 
-def send_activation_email(user, request):
+def send_activation_email(user):
     """
     Send an activation email to the user.
     """
@@ -54,7 +54,7 @@ def send_activation_email(user, request):
     msg.send()
 
 
-def send_password_reset_email(user, request):
+def send_password_reset_email(user):
     """
     Send a password reset email to the user.
     """
@@ -78,15 +78,6 @@ def send_password_reset_email(user, request):
     msg = EmailMultiAlternatives(subject, "", from_email, to_email)
     msg.attach_alternative(html_content, "text/html")
     msg.send()
-
-
-def resend_activation_link(user, request):
-    """
-    Generate and send a new activation link to the user.
-    """
-    user.activation_code, user.activation_code_expiry = generate_activation_code()
-    user.save()
-    send_activation_email(user, request)
 
 
 def encode_uid(user):

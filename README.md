@@ -66,7 +66,7 @@ docker compose --profile prod up -d --build -> production server
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
 🟢 Migrations run when `web` starts; static files are built into the image.  
-🟢 `web` (Gunicorn) and `worker` (RQ, ffmpeg) run as separate containers from the same image.
+🟢 `web` (Gunicorn), `worker` (RQ, ffmpeg) and `mail-worker` (RQ, account mails) run as separate containers from the same image.
 
 # 5. Create an admin account once (no default accounts in the image)
 docker compose --profile dev exec web python manage.py createsuperuser
@@ -124,8 +124,8 @@ docker compose --profile dev exec web sh -lc "
 "
 
 # Logs:
-docker compose logs -f web worker            # dev
-docker compose logs -f web-prod worker-prod  # prod
+docker compose logs -f web worker mail-worker            # dev
+docker compose logs -f web-prod worker-prod mail-worker-prod  # prod
 
 # Dependencies: requirements.txt (runtime, used by the prod image) and
 # requirements-dev.txt (test and debug tools, used by the dev profile).

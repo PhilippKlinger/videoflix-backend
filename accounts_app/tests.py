@@ -1,6 +1,7 @@
 import base64
 from datetime import timedelta
 from io import StringIO
+from unittest.mock import patch
 from django.core import mail
 from django.core.management import call_command
 from django.conf import settings
@@ -14,7 +15,19 @@ from accounts_app.models import CustomUser
 from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase
+from accounts_app.api.tasks import deliver_activation_email, deliver_password_reset_email
 from accounts_app.api.utils import is_admin
+
+
+def run_mail_jobs_inline(test_case):
+    """
+    Run queued mail jobs right away; tests need neither Redis nor a worker.
+    """
+    patcher = patch("accounts_app.api.tasks.django_rq.get_queue")
+    get_queue = patcher.start()
+    test_case.addCleanup(patcher.stop)
+    get_queue.return_value.enqueue.side_effect = lambda task, *args: task(*args)
+    return get_queue
 
 
 class AccountsIntegrationTests(APITestCase):
@@ -27,6 +40,7 @@ class AccountsIntegrationTests(APITestCase):
     def setUp(self):
         # Throttle counters live in the cache (VFX-29); each test starts fresh.
         cache.clear()
+        run_mail_jobs_inline(self)
         # Create admin
         self.admin = CustomUser.objects.create_user(
             username="admin",
@@ -380,6 +394,77 @@ class AccountsIntegrationTests(APITestCase):
         url = f"/api/admin/restore-account/99999/"
         response = self.client.post(url)
         self.assertEqual(response.status_code, 404)
+
+
+class MailWorkerTests(APITestCase):
+    """
+    Mails leave through the worker, so an SMTP or Redis outage never fails the request (VFX-52).
+    """
+
+    REGISTRATION = {
+        "email": "neu@example.com",
+        "password": "NeuUser123!",
+        "confirmed_password": "NeuUser123!",
+    }
+
+    def setUp(self):
+        cache.clear()
+        self.user = CustomUser.objects.create_user(
+            username="user", email="user@test.de", password="User123!", is_active=True
+        )
+
+    @patch("accounts_app.api.tasks.django_rq.get_queue")
+    def test_registration_queues_the_mail_with_the_user_id_only(self, get_queue):
+        response = self.client.post("/api/register/", self.REGISTRATION)
+        self.assertEqual(response.status_code, 201)
+        user = CustomUser.objects.get(email="neu@example.com")
+        get_queue.assert_called_once_with("mail", autocommit=True)
+        get_queue.return_value.enqueue.assert_called_once_with(deliver_activation_email, user.pk)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @patch("accounts_app.api.tasks.django_rq.get_queue")
+    def test_password_reset_queues_the_mail_with_the_user_id_only(self, get_queue):
+        response = self.client.post("/api/password_reset/", {"email": "user@test.de"})
+        self.assertEqual(response.status_code, 200)
+        get_queue.assert_called_once_with("mail", autocommit=True)
+        get_queue.return_value.enqueue.assert_called_once_with(deliver_password_reset_email, self.user.pk)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @patch("accounts_app.api.tasks.django_rq.get_queue", side_effect=ConnectionError("redis down"))
+    def test_registration_survives_a_redis_outage(self, _):
+        with self.assertLogs("accounts_app.api.tasks", level="ERROR"):
+            response = self.client.post("/api/register/", self.REGISTRATION)
+        self.assertEqual(response.status_code, 201)
+
+    @patch("accounts_app.api.tasks.django_rq.get_queue", side_effect=ConnectionError("redis down"))
+    def test_password_reset_survives_a_redis_outage(self, _):
+        with self.assertLogs("accounts_app.api.tasks", level="ERROR"):
+            response = self.client.post("/api/password_reset/", {"email": "user@test.de"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_worker_sends_the_activation_mail(self):
+        self.user.activation_code = "code"
+        self.user.save()
+        deliver_activation_email(self.user.pk)
+        self.assertEqual(mail.outbox[0].to, ["user@test.de"])
+
+    def test_worker_sends_the_reset_mail(self):
+        self.user.activation_code = "code"
+        self.user.save()
+        deliver_password_reset_email(self.user.pk)
+        self.assertEqual(mail.outbox[0].to, ["user@test.de"])
+
+    @patch("django.core.mail.EmailMultiAlternatives.send", side_effect=OSError("smtp down user@test.de"))
+    def test_smtp_outage_is_logged_without_the_address(self, _):
+        with self.assertLogs("accounts_app.api.tasks", level="ERROR") as logs:
+            deliver_activation_email(self.user.pk)
+        self.assertNotIn("user@test.de", "".join(logs.output))
+
+    def test_deleted_account_is_skipped(self):
+        user_id = self.user.pk
+        self.user.delete()
+        deliver_password_reset_email(user_id)
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class MeEndpointTests(APITestCase):

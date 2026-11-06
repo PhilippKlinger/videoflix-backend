@@ -45,6 +45,11 @@ RUN SECRET_KEY=collectstatic-build-only DB_PASSWORD=collectstatic-build-only \
     chown -R app:app /app/static /app/media && \
     chmod +x backend.entrypoint.sh
 
+# Build information for /api/version/; last on purpose, so a new commit keeps the layers above cached.
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+ENV GIT_SHA="${GIT_SHA}" BUILD_TIME="${BUILD_TIME}"
+
 USER app
 
 EXPOSE 8000

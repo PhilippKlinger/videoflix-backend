@@ -63,6 +63,24 @@ services:
       - db
       - redis
 
+  mail-worker:
+    # Dev profile: RQ worker for account mails, sends to Mailpit
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+      args:
+        REQUIREMENTS: requirements-dev.txt
+    command: ["mail-worker"]
+    env_file: .env
+    container_name: videoflix_mail_worker_dev
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+      - mailpit
+
   web-prod:
     # Prod profile: local check of the production image (the server uses videoflix-deploy)
     profiles: ["prod"]
@@ -90,6 +108,18 @@ services:
     container_name: videoflix_worker_prod
     volumes:
       - videoflix_media:/app/media
+    depends_on:
+      - db
+      - redis
+
+  mail-worker-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: ["mail-worker"]
+    env_file: .env
+    container_name: videoflix_mail_worker_prod
     depends_on:
       - db
       - redis

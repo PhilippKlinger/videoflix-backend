@@ -16,6 +16,9 @@ MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_VIDEO_DURATION_SECONDS = 120
 MAX_UPLOADS_PER_ACCOUNT = 2
 
+# Uploads are untrusted: a crafted file must not make ffmpeg or ffprobe open URLs.
+LOCAL_FILES_ONLY = ["-protocol_whitelist", "file"]
+
 
 def get_base_name_and_extension(file_name):
     """
@@ -56,6 +59,7 @@ def get_ffmpeg_thumbnail_command(input_path, output_path):
     """
     return [
         "ffmpeg",
+        *LOCAL_FILES_ONLY,
         "-i",
         input_path,
         "-ss",
@@ -78,6 +82,7 @@ def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
     segment_path = os.path.join(output_dir, "index%03d.ts")
     return [
         "ffmpeg",
+        *LOCAL_FILES_ONLY,
         "-i",
         input_path,
         "-vf",
@@ -118,6 +123,7 @@ def get_ffprobe_command(input_path):
         "stream=codec_type:format=format_name,duration",
         "-of",
         "json",
+        *LOCAL_FILES_ONLY,
         input_path,
     ]
 

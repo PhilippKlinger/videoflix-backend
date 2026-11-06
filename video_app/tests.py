@@ -403,6 +403,7 @@ class VideoAppIntegrationTests(APITestCase):
     @patch("video_app.api.tasks.default_storage.exists", return_value=True)
     @patch("video_app.api.tasks.ContentFile", return_value=b"img")
     @patch("video_app.api.tasks.open", new_callable=mock_open, read_data=b"img")
+    @patch("video_app.api.tasks._thumbnail_written", return_value=True)
     @patch("video_app.api.tasks.subprocess.run", return_value=True)
     @patch(
         "video_app.api.tasks.get_ffmpeg_thumbnail_command",
@@ -422,6 +423,7 @@ class VideoAppIntegrationTests(APITestCase):
         mock_build_out,
         mock_get_cmd,
         mock_subprocess,
+        mock_written,
         mock_openfile,
         mock_contentfile,
         mock_exists,
@@ -441,9 +443,10 @@ class VideoAppIntegrationTests(APITestCase):
     @patch("video_app.api.tasks.set_video_failed")
     @patch("django.db.models.fields.files.FieldFile.save", return_value=None)
     @patch("video_app.api.tasks.open", new_callable=mock_open, read_data=b"img")
+    @patch("video_app.api.tasks._thumbnail_written", return_value=True)
     @patch("video_app.api.tasks.subprocess.run")
     def test_short_clip_falls_back_to_the_first_frame(
-        self, mock_run, mock_openfile, mock_save, mock_failed
+        self, mock_run, mock_written, mock_openfile, mock_save, mock_failed
     ):
         mock_run.side_effect = [
             subprocess.CalledProcessError(234, ["ffmpeg"]),
@@ -459,6 +462,39 @@ class VideoAppIntegrationTests(APITestCase):
         self.assertEqual(second[second.index("-ss") + 1], "00:00:00")
         self.assertTrue(mock_save.called)
         mock_failed.assert_not_called()
+
+    @patch("video_app.api.tasks.set_video_failed")
+    @patch("django.db.models.fields.files.FieldFile.save", return_value=None)
+    @patch("video_app.api.tasks.open", new_callable=mock_open, read_data=b"img")
+    @patch("video_app.api.tasks._thumbnail_written", side_effect=[False, True])
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_short_clip_falls_back_when_ffmpeg_exits_cleanly_without_a_file(
+        self, mock_run, mock_written, mock_openfile, mock_save, mock_failed
+    ):
+        mock_run.return_value = MagicMock(returncode=0)
+        video = Video.objects.create(
+            title="Quiet", description="desc", category="Action"
+        )
+        tasks._run_thumbnail_command("in.mp4", "out.jpg", video, "out.jpg")
+        self.assertEqual(mock_run.call_count, 2)
+        second = mock_run.call_args_list[1].args[0]
+        self.assertEqual(second[second.index("-ss") + 1], "00:00:00")
+        self.assertTrue(mock_save.called)
+        mock_failed.assert_not_called()
+
+    @patch("video_app.api.tasks._thumbnail_written", return_value=False)
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_thumbnail_fails_when_both_attempts_exit_cleanly_without_a_file(
+        self, mock_run, mock_written
+    ):
+        mock_run.return_value = MagicMock(returncode=0)
+        video = Video.objects.create(
+            title="Empty", description="desc", category="Action"
+        )
+        tasks._run_thumbnail_command("in.mp4", "out.jpg", video, "out.jpg")
+        self.assertEqual(mock_run.call_count, 2)
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
 
     @patch("video_app.api.tasks.subprocess.run")
     def test_thumbnail_fails_when_both_attempts_fail(self, mock_run):

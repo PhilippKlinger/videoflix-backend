@@ -496,6 +496,18 @@ class VideoAppIntegrationTests(APITestCase):
         video.refresh_from_db()
         self.assertEqual(video.status, "failed")
 
+    def test_thumbnail_counts_as_written_only_with_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = os.path.join(tmp, "missing.jpg")
+            empty = os.path.join(tmp, "empty.jpg")
+            filled = os.path.join(tmp, "filled.jpg")
+            open(empty, "wb").close()
+            with open(filled, "wb") as f:
+                f.write(b"img")
+            self.assertFalse(tasks._thumbnail_written(missing))
+            self.assertFalse(tasks._thumbnail_written(empty))
+            self.assertTrue(tasks._thumbnail_written(filled))
+
     @patch("video_app.api.tasks.subprocess.run")
     def test_thumbnail_fails_when_both_attempts_fail(self, mock_run):
         mock_run.side_effect = subprocess.CalledProcessError(234, ["ffmpeg"])

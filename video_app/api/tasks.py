@@ -87,7 +87,8 @@ def _run_thumbnail_attempt(command, output_path):
     """
     try:
         subprocess.run(command, check=True)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        logger.info("ffmpeg exited with code %s while creating a thumbnail.", e.returncode)
         return False
     return _thumbnail_written(output_path)
 

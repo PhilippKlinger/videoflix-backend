@@ -51,19 +51,24 @@ def is_valid_video_extension(extension):
 # for both on 2x screens while keeping files small (VFX-64).
 THUMBNAIL_SIZE = (1280, 720)
 THUMBNAIL_QUALITY = "5"
+# Clips shorter than this seek position produce no frame; tasks retry from the start.
+THUMBNAIL_SEEK = "00:00:05"
+THUMBNAIL_SEEK_FALLBACK = "00:00:00"
 
 
-def get_ffmpeg_thumbnail_command(input_path, output_path):
+def get_ffmpeg_thumbnail_command(input_path, output_path, seek=THUMBNAIL_SEEK):
     """
-    Return the ffmpeg command for creating a video thumbnail image.
+    Return the ffmpeg command for creating a video thumbnail image at the given seek position.
     """
     return [
         "ffmpeg",
+        # A failed first attempt can leave an output file; never wait for an overwrite prompt.
+        "-y",
         *LOCAL_FILES_ONLY,
         "-i",
         input_path,
         "-ss",
-        "00:00:05",
+        seek,
         "-vframes",
         "1",
         "-q:v",

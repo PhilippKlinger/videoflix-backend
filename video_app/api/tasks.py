@@ -17,6 +17,7 @@ from .utils import (
     is_valid_video_extension,
     STANDARD_VIDEOS_CACHE_KEY,
     get_ffmpeg_thumbnail_command,
+    THUMBNAIL_SEEK_FALLBACK,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,18 +57,44 @@ def _run_thumbnail_command(input_path, output_path, video_instance, output_filen
     """
     Run ffmpeg to create a thumbnail and save it to the video instance.
     """
-    command = get_ffmpeg_thumbnail_command(input_path, output_path)
+    if not _create_thumbnail_file(input_path, output_path, video_instance):
+        logger.error("Failed to create thumbnail for video %s.", video_instance.pk)
+        set_video_failed(video_instance)
+        return
+    with open(output_path, "rb") as f:
+        video_instance.thumbnail_url.save(
+            output_filename, ContentFile(f.read()), save=True
+        )
+    logger.info("Thumbnail created for video %s.", video_instance.pk)
+    video_instance.save()
+
+
+def _create_thumbnail_file(input_path, output_path, video_instance):
+    """
+    Seek to the default position; if that yields no image (clip too short), retry from the first frame.
+    Return True if a thumbnail file was written.
+    """
+    if _run_thumbnail_attempt(get_ffmpeg_thumbnail_command(input_path, output_path), output_path):
+        return True
+    logger.info("No thumbnail at the default position for video %s, retrying from the first frame.", video_instance.pk)
+    command = get_ffmpeg_thumbnail_command(input_path, output_path, seek=THUMBNAIL_SEEK_FALLBACK)
+    return _run_thumbnail_attempt(command, output_path)
+
+
+def _run_thumbnail_attempt(command, output_path):
+    """
+    An attempt succeeds only if ffmpeg exits 0 and leaves a non-empty file; some builds exit 0 without output.
+    """
     try:
         subprocess.run(command, check=True)
-        with open(output_path, "rb") as f:
-            video_instance.thumbnail_url.save(
-                output_filename, ContentFile(f.read()), save=True
-            )
-        logger.info("Thumbnail created for video %s.", video_instance.pk)
-        video_instance.save()
     except subprocess.CalledProcessError as e:
-        logger.error("Failed to create thumbnail for video %s (exit code %s).", video_instance.pk, e.returncode)
-        set_video_failed(video_instance)
+        logger.info("ffmpeg exited with code %s while creating a thumbnail.", e.returncode)
+        return False
+    return _thumbnail_written(output_path)
+
+
+def _thumbnail_written(output_path):
+    return os.path.isfile(output_path) and os.path.getsize(output_path) > 0
 
 
 def _cleanup_temp_thumbnail(output_filename):

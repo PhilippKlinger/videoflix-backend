@@ -17,6 +17,7 @@ from .utils import (
     is_valid_video_extension,
     STANDARD_VIDEOS_CACHE_KEY,
     get_ffmpeg_thumbnail_command,
+    THUMBNAIL_SEEK_FALLBACK,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,9 +57,8 @@ def _run_thumbnail_command(input_path, output_path, video_instance, output_filen
     """
     Run ffmpeg to create a thumbnail and save it to the video instance.
     """
-    command = get_ffmpeg_thumbnail_command(input_path, output_path)
     try:
-        subprocess.run(command, check=True)
+        _run_thumbnail_with_fallback(input_path, output_path, video_instance)
         with open(output_path, "rb") as f:
             video_instance.thumbnail_url.save(
                 output_filename, ContentFile(f.read()), save=True
@@ -68,6 +68,22 @@ def _run_thumbnail_command(input_path, output_path, video_instance, output_filen
     except subprocess.CalledProcessError as e:
         logger.error("Failed to create thumbnail for video %s (exit code %s).", video_instance.pk, e.returncode)
         set_video_failed(video_instance)
+
+
+def _run_thumbnail_with_fallback(input_path, output_path, video_instance):
+    """
+    Seek to the default position; if ffmpeg writes nothing (clip too short), retry from the first frame.
+    """
+    try:
+        subprocess.run(get_ffmpeg_thumbnail_command(input_path, output_path), check=True)
+    except subprocess.CalledProcessError as e:
+        logger.info(
+            "Thumbnail for video %s failed (exit code %s), retrying from the first frame.",
+            video_instance.pk,
+            e.returncode,
+        )
+        command = get_ffmpeg_thumbnail_command(input_path, output_path, seek=THUMBNAIL_SEEK_FALLBACK)
+        subprocess.run(command, check=True)
 
 
 def _cleanup_temp_thumbnail(output_filename):

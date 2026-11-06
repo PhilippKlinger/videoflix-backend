@@ -364,6 +364,17 @@ class VideoAppIntegrationTests(APITestCase):
         self.assertIn("input", cmd)
         self.assertIn("output", cmd)
 
+    def test_thumbnail_command_accepts_a_seek_position(self):
+        default = utils.get_ffmpeg_thumbnail_command("input", "output")
+        self.assertEqual(default[default.index("-ss") + 1], "00:00:05")
+        cmd = utils.get_ffmpeg_thumbnail_command("input", "output", seek="00:00:00")
+        self.assertEqual(cmd[cmd.index("-ss") + 1], "00:00:00")
+
+    def test_thumbnail_command_overwrites_a_leftover_file(self):
+        # A failed first attempt may leave an output file; without -y ffmpeg would refuse to overwrite it.
+        cmd = utils.get_ffmpeg_thumbnail_command("input", "output")
+        self.assertIn("-y", cmd)
+
     def test_thumbnail_command_fits_the_tile_size(self):
         # VFX-64: tiles show ~533x300, the hero is wider; 1280x720 covers both at 2x.
         cmd = utils.get_ffmpeg_thumbnail_command("input", "output")
@@ -426,6 +437,39 @@ class VideoAppIntegrationTests(APITestCase):
         tasks.create_thumbnail(video.id)
         video.refresh_from_db()
         self.assertIn(video.status, ["processing", "ready", "failed"])
+
+    @patch("video_app.api.tasks.set_video_failed")
+    @patch("django.db.models.fields.files.FieldFile.save", return_value=None)
+    @patch("video_app.api.tasks.open", new_callable=mock_open, read_data=b"img")
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_short_clip_falls_back_to_the_first_frame(
+        self, mock_run, mock_openfile, mock_save, mock_failed
+    ):
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(234, ["ffmpeg"]),
+            MagicMock(returncode=0),
+        ]
+        video = Video.objects.create(
+            title="Short", description="desc", category="Action"
+        )
+        tasks._run_thumbnail_command("in.mp4", "out.jpg", video, "out.jpg")
+        self.assertEqual(mock_run.call_count, 2)
+        first, second = [c.args[0] for c in mock_run.call_args_list]
+        self.assertEqual(first[first.index("-ss") + 1], "00:00:05")
+        self.assertEqual(second[second.index("-ss") + 1], "00:00:00")
+        self.assertTrue(mock_save.called)
+        mock_failed.assert_not_called()
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_thumbnail_fails_when_both_attempts_fail(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(234, ["ffmpeg"])
+        video = Video.objects.create(
+            title="Broken", description="desc", category="Action"
+        )
+        tasks._run_thumbnail_command("in.mp4", "out.jpg", video, "out.jpg")
+        self.assertEqual(mock_run.call_count, 2)
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
 
     @patch("video_app.api.tasks.default_storage.path", side_effect=lambda x: x)
     def test_create_thumbnail_invalid_file(self, mock_path):

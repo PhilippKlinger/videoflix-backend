@@ -77,6 +77,54 @@ class HlsCommandTests(SimpleTestCase):
         self.assertEqual(limited, plain)
 
 
+class FfmpegOutputTests(APITestCase):
+    """
+    ffmpeg prints file names and metadata (titles, GPS) to stderr, which goes straight to the
+    host journal. Its output is discarded; logs carry only the exit code and IDs (X5 finding 1).
+    """
+
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        queue = patch("video_app.api.signals.django_rq.get_queue")
+        queue.start()
+        self.addCleanup(queue.stop)
+        self.video = Video.objects.create(
+            title="Private Holiday", description="d", category="Comedy",
+            video_file="videos/max_mustermann.mp4",
+        )
+
+    def _assert_output_discarded(self, mock_run):
+        self.assertTrue(mock_run.called)
+        for call in mock_run.call_args_list:
+            self.assertEqual(call.kwargs["stdout"], subprocess.DEVNULL)
+            self.assertEqual(call.kwargs["stderr"], subprocess.DEVNULL)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_conversion_discards_ffmpeg_output(self, mock_run):
+        convert_video(self.video.pk)
+        self._assert_output_discarded(mock_run)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_thumbnail_discards_ffmpeg_output(self, mock_run):
+        tasks.create_thumbnail(self.video.pk)
+        self._assert_output_discarded(mock_run)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_failed_conversion_logs_exit_code_and_id_only(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(69, ["ffmpeg", "videos/max_mustermann.mp4"])
+        with self.assertLogs("video_app.api.tasks", level="ERROR") as logs:
+            convert_video(self.video.pk)
+        output = " ".join(logs.output)
+        self.assertIn("69", output)
+        self.assertIn(str(self.video.pk), output)
+        self.assertNotIn("mustermann", output)
+        self.assertNotIn("Private Holiday", output)
+
+
 class VideoAppIntegrationTests(APITestCase):
     """
     Integration tests for the video_app.
@@ -1395,7 +1443,7 @@ class HlsFolderTests(APITestCase):
             f.write(content)
         return relative_path
 
-    def _fake_ffmpeg(self, command, check=True):
+    def _fake_ffmpeg(self, command, **kwargs):
         """
         Stands in for ffmpeg only: writes a playlist and a segment holding the bytes of the input.
         """

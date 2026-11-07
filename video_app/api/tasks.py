@@ -93,7 +93,7 @@ def _run_thumbnail_attempt(command, output_path):
     An attempt succeeds only if ffmpeg exits 0 and leaves a non-empty file; some builds exit 0 without output.
     """
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         logger.info("ffmpeg exited with code %s while creating a thumbnail.", e.returncode)
         return False
@@ -183,7 +183,8 @@ def _run_hls_command(
         default_storage.path(input_file.name), out_dir, base_name, res_height, max_seconds
     )
     try:
-        subprocess.run(command, check=True)
+        # ffmpeg prints file names and metadata (titles, GPS); logs carry IDs only (VFX-31).
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         rel_playlist_path = os.path.relpath(
             os.path.join(out_dir, "index.m3u8"), settings.MEDIA_ROOT
         )
@@ -197,9 +198,15 @@ def _run_hls_command(
         )
         update_video_cache()
         return True
+    except subprocess.CalledProcessError as e:
+        logger.error(
+            "ffmpeg exited with code %s while converting video %s to %s.",
+            e.returncode, video_instance.pk, res_label,
+        )
     except Exception as e:
-        set_video_failed(video_instance)
-        return False
+        logger.error("Error converting video %s to %s: %s", video_instance.pk, res_label, type(e).__name__)
+    set_video_failed(video_instance)
+    return False
 
 
 def set_video_failed(video_instance):

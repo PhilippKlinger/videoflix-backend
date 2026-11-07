@@ -1,7 +1,7 @@
 # Videoflix Backend
 
 This is the backend REST API for **Videoflix**, a video streaming platform inspired by Netflix, built with Django, Django REST Framework, and Docker.  
-Videoflix allows users to register, upload videos, stream in multiple resolutions (HLS), track watch progress, and manage their accounts securely.
+Videoflix allows users to register, upload videos, stream in multiple resolutions (HLS), and manage their accounts securely.
 
 ---
 
@@ -13,7 +13,6 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 - **Video Management**
   - Authenticated video upload with automatic processing (thumbnail + HLS transcoding)
   - Video streaming in multiple resolutions (HLS)
-  - Video progress tracking per user
 - **Admin Features**
   - Permanent account deletion
   - Admin interface with import/export for data
@@ -50,7 +49,7 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 ```bash
 # 1. Clone the repository  
 git clone git@github.com:PhilippKlinger/videoflix-backend.git 
-cd videoflix_backend  
+cd videoflix-backend  
 
 # 2. Make a copy of the .env.template
 cp .env.dev.template .env -> local development
@@ -62,7 +61,7 @@ http://127.0.0.1:4200/ -> Angular
 
 # 4. Build and start all services (backend, Postgres, Redis)  
 docker compose --profile dev up -d --build -> local development
-docker compose --profile prod up -d --build -> production server
+docker compose --profile prod up -d --build -> local check of the production image (production runs via the videoflix-deploy repository)
 
 🟢 The backend, database, Redis, and worker will be set up automatically.  
 🟢 Migrations run when `web` starts; static files are built into the image.  
@@ -109,7 +108,7 @@ You can:
 
 - See all endpoints, parameters, models, responses, and error codes.
 - Try out requests (register, login, upload videos) directly in the browser.
-- Use the "Authorize" button to test endpoints requiring authentication (after logging in).
+- Test endpoints requiring authentication with the JWT cookies from `POST /api/login/`; the "Authorize" button only offers Basic auth, which this API does not accept.
 
 ---
 
@@ -142,13 +141,13 @@ docker compose --profile dev exec web sh -lc "
 docker compose --profile prod up -d --build
 
 **Media & Static files**  
-Uploaded videos and static files are persisted in Docker volumes.
+Uploaded videos are persisted in a Docker volume. Static files are built into the production image; only the dev profile keeps them in a volume.
 
 **Environment variables**  
 Sensitive settings are loaded from `.env` (see `.env.dev.template` and `.env.prod.template` for reference).
 
 **Admin UI**  
-Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) (credentials set in `.env`).
+Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) (with the account from `createsuperuser`, see step 5 of the Quickstart).
 ```
 ---
 

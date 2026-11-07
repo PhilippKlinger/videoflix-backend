@@ -62,6 +62,20 @@ class HlsCommandTests(SimpleTestCase):
         self.assertEqual(cmd[cmd.index("-preset") + 1], "veryfast")
         self.assertEqual(cmd[cmd.index("-crf") + 1], "28")
 
+    def test_no_length_limit_by_default(self):
+        cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720)
+        self.assertNotIn("-t", cmd)
+
+    def test_length_limit_is_an_output_option_after_the_input(self):
+        cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720, max_seconds=120)
+        self.assertEqual(cmd[cmd.index("-t") + 1], "120")
+        self.assertGreater(cmd.index("-t"), cmd.index("-i") + 1)
+        # Every other argument stays as it is.
+        plain, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720)
+        limited = list(cmd)
+        del limited[cmd.index("-t") : cmd.index("-t") + 2]
+        self.assertEqual(limited, plain)
+
 
 class VideoAppIntegrationTests(APITestCase):
     """
@@ -1194,6 +1208,48 @@ class MediaProtectionTests(APITestCase):
         self.assertTrue(os.path.exists(os.path.join(self.media_root, "videos", "broken.mp4")))
         self.assertEqual(video.video_file.name, "videos/broken.mp4")
 
+    # --- CONVERSION LIMIT ---
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_owned_video_is_converted_with_the_length_limit(self, mock_run):
+        # The upload check trusts the container header; the conversion must cap the length itself.
+        video = Video.objects.create(
+            title="Limited", description="d", category="Comedy", owner=self.alice,
+            video_file=self._write("videos/limited.mp4", b"ORIGINAL"),
+        )
+        convert_video(video.id)
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        self.assertEqual(len(commands), 3)
+        for cmd in commands:
+            self.assertEqual(cmd[cmd.index("-t") + 1], str(utils.MAX_VIDEO_DURATION_SECONDS))
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_standard_video_is_converted_without_a_length_limit(self, mock_run):
+        video = Video.objects.create(
+            title="Catalog", description="d", category="Comedy",
+            video_file=self._write("videos/catalog.mp4", b"ORIGINAL"),
+        )
+        convert_video(video.id)
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        self.assertEqual(len(commands), 3)
+        for cmd in commands:
+            self.assertNotIn("-t", cmd)
+
+    # --- HLS FOLDER CLEANUP ---
+    def test_deleting_a_video_removes_its_folder_even_without_resolution_rows(self):
+        # A stopped conversion leaves segments but no row; the folder belongs to this video alone.
+        video = Video.objects.create(title="Stopped", description="d", category="Comedy", owner=self.alice)
+        other = Video.objects.create(title="Other", description="d", category="Comedy", owner=self.alice)
+        self._write(f"hls/{video.pk}/480p/index000.ts", b"TS")
+        sibling = self._write(f"hls/{video.pk}0/480p/index000.ts", b"TS")
+        others = self._write(f"hls/{other.pk}/480p/index000.ts", b"TS")
+        old_layout = self._write("hls/clip/720p/index000.ts", b"TS")
+        pk = video.pk
+        self.assertTrue(os.path.exists(os.path.join(self.media_root, "hls", str(pk))))
+        video.delete()
+        self.assertFalse(os.path.exists(os.path.join(self.media_root, "hls", str(pk))))
+        for kept in (sibling, others, old_layout):
+            self.assertTrue(os.path.exists(os.path.join(self.media_root, kept)), kept)
+
 
 class VideoListCachePrivacyTests(APITestCase):
     """
@@ -1840,11 +1896,108 @@ class VideoStreamsTests(APITestCase):
             },
         )
 
-    def test_old_upload_reports_sixteen_second_segments(self):
-        self._stream("480p", [("index000.ts", 16.0, 10), ("index001.ts", 12.5, 10)], target=16)
+    def test_old_upload_reports_the_target_duration_of_its_playlist(self):
+        # Real old uploads (-hls_time 16) have a target of 17, 20 or 21, depending on the frame rate.
+        self._stream("480p", [("index000.ts", 16.8, 10), ("index001.ts", 12.5, 10)], target=17)
         stream = self._get().json()["streams"][0]
-        self.assertEqual(stream["segment_seconds"], 16)
-        self.assertEqual(stream["duration_seconds"], 28.5)
+        self.assertEqual(stream["segment_seconds"], 17)
+        self.assertEqual(stream["duration_seconds"], 29.3)
+
+    def _raw_stream(self, content, resolution="720p", segment_size=10):
+        self._write(f"hls/clip/{resolution}/index000.ts", b"x" * segment_size)
+        self._write(f"hls/clip/{resolution}/index.m3u8", content)
+        VideoResolution.objects.create(
+            original_video=self.video, resolution=resolution,
+            converted_file=f"hls/clip/{resolution}/index.m3u8",
+        )
+
+    def test_non_finite_numbers_in_a_playlist_give_no_stream(self):
+        cases = {
+            "target inf": b"#EXT-X-TARGETDURATION:inf\n#EXTINF:4.0,\nindex000.ts\n",
+            "target negative": b"#EXT-X-TARGETDURATION:-4\n#EXTINF:4.0,\nindex000.ts\n",
+            "target zero": b"#EXT-X-TARGETDURATION:0\n#EXTINF:4.0,\nindex000.ts\n",
+            "extinf nan": b"#EXT-X-TARGETDURATION:4\n#EXTINF:nan,\nindex000.ts\n",
+            "extinf overflow": b"#EXT-X-TARGETDURATION:4\n#EXTINF:1e999,\nindex000.ts\n",
+        }
+        for name, body in cases.items():
+            with self.subTest(case=name):
+                VideoResolution.objects.all().delete()
+                self._raw_stream(b"#EXTM3U\n" + body)
+                response = self._get()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"streams": []})
+
+    def test_broken_playlist_contents_give_no_stream(self):
+        cases = {
+            "broken target": b"#EXT-X-TARGETDURATION:abc\n#EXTINF:4.0,\nindex000.ts\n",
+            "broken extinf": b"#EXT-X-TARGETDURATION:4\n#EXTINF:abc,\nindex000.ts\n",
+            "nul byte in name": b"#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nindex\x00000.ts\n",
+            "not utf-8": b"#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\n\xff\xfe\xfd.ts\n",
+        }
+        for name, body in cases.items():
+            with self.subTest(case=name):
+                VideoResolution.objects.all().delete()
+                self._raw_stream(b"#EXTM3U\n" + body)
+                response = self._get()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"streams": []})
+
+    def test_playlist_without_target_duration_gives_no_stream(self):
+        self._raw_stream(b"#EXTM3U\n#EXTINF:4.0,\nindex000.ts\n")
+        self.assertEqual(self._get().json(), {"streams": []})
+
+    def test_file_name_without_ts_extension_does_not_count(self):
+        self._write("hls/clip/720p/index001.dat", b"d" * 500)
+        self._raw_stream(
+            b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nindex000.ts\n#EXTINF:4.0,\nindex001.dat\n",
+            segment_size=1000,
+        )
+        stream = self._get().json()["streams"][0]
+        self.assertEqual(stream["size_bytes"], 1000)
+        self.assertEqual(stream["segment_count"], 1)
+
+    def test_segment_linked_into_a_folder_with_the_same_prefix_is_not_counted(self):
+        self._write("hls/clip/720p-evil/a.ts", b"s" * 5000)
+        folder = os.path.join(self.media_root, "hls", "clip", "720p")
+        os.makedirs(folder, exist_ok=True)
+        try:
+            os.symlink(
+                os.path.join(self.media_root, "hls", "clip", "720p-evil", "a.ts"),
+                os.path.join(folder, "index001.ts"),
+            )
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks not available")
+        self._raw_stream(
+            b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nindex000.ts\n#EXTINF:4.0,\nindex001.ts\n"
+        )
+        self.assertEqual(self._get().json(), {"streams": []})
+
+    def test_converted_file_outside_media_root_gives_an_empty_list(self):
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        with open(os.path.join(outside, "a.ts"), "wb") as f:
+            f.write(b"x" * 10)
+        with open(os.path.join(outside, "index.m3u8"), "wb") as f:
+            f.write(b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\na.ts\n")
+        VideoResolution.objects.create(
+            original_video=self.video, resolution="720p",
+            converted_file=os.path.relpath(os.path.join(outside, "index.m3u8"), self.media_root),
+        )
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"streams": []})
+
+    def test_bitrate_is_kilobits_of_one_thousand(self):
+        # 50000 bytes in 4 s are 100 kbit/s; dividing by 1024 would give 98.
+        self._stream("720p", [("index000.ts", 4.0, 50000)])
+        self.assertEqual(self._get().json()["streams"][0]["bitrate_kbps"], 100)
+
+    def test_foreign_private_video_looks_like_a_missing_video(self):
+        self._stream("720p", [("index000.ts", 4.0, 10)])
+        foreign = self._get(client=self.bob_client)
+        missing = self.bob_client.get("/api/video/999999/streams/")
+        self.assertEqual(foreign.status_code, missing.status_code)
+        self.assertEqual(foreign.content, missing.content)
 
     def test_streams_are_ordered_by_resolution_descending(self):
         for resolution in ["480p", "1080p", "720p"]:

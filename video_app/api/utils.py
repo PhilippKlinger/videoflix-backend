@@ -83,17 +83,22 @@ def get_ffmpeg_thumbnail_command(input_path, output_path, seek=THUMBNAIL_SEEK):
 HLS_SEGMENT_SECONDS = 4
 
 
-def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
+def get_ffmpeg_hls_command(input_path, output_dir, base_name, height, max_seconds=None):
     """
     Return the ffmpeg command and output path for creating HLS segments and playlist.
+
+    With max_seconds the output is cut off there, whatever length the file header claims.
     """
     playlist_path = os.path.join(output_dir, "index.m3u8")
     segment_path = os.path.join(output_dir, "index%03d.ts")
+    # An output option, so it goes after -i.
+    limit = ["-t", str(max_seconds)] if max_seconds else []
     return [
         "ffmpeg",
         *LOCAL_FILES_ONLY,
         "-i",
         input_path,
+        *limit,
         "-vf",
         f"scale=-2:{height}",
         "-c:v",

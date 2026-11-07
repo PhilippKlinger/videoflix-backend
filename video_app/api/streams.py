@@ -2,6 +2,7 @@
 Statistics of an HLS stream, read from its playlist and segment files.
 """
 
+import math
 import os
 
 
@@ -57,9 +58,9 @@ def read_stream_stats(playlist_path):
                     duration += pending
                     size_bytes += size
                 pending = None
-    except (OSError, ValueError):
+    except (OSError, ValueError, OverflowError):
         return None
-    if target is None or duration <= 0:
+    if target is None or target <= 0 or not math.isfinite(duration) or duration <= 0:
         return None
     return {
         "bitrate_kbps": round(size_bytes * 8 / duration / 1000),

@@ -15,6 +15,7 @@ from .utils import (
     build_output_filename,
     get_ffmpeg_hls_command,
     is_valid_video_extension,
+    MAX_VIDEO_DURATION_SECONDS,
     STANDARD_VIDEOS_CACHE_KEY,
     get_ffmpeg_thumbnail_command,
     THUMBNAIL_SEEK_FALLBACK,
@@ -176,8 +177,10 @@ def _run_hls_command(
     Run ffmpeg to create HLS for a resolution, update DB and cache.
     Return True on success.
     """
+    # Uploads are capped at the allowed length; catalog videos (no owner) are not.
+    max_seconds = MAX_VIDEO_DURATION_SECONDS if video_instance.owner_id else None
     command, playlist_path = get_ffmpeg_hls_command(
-        default_storage.path(input_file.name), out_dir, base_name, res_height
+        default_storage.path(input_file.name), out_dir, base_name, res_height, max_seconds
     )
     try:
         subprocess.run(command, check=True)

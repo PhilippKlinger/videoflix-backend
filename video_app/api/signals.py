@@ -6,6 +6,7 @@ import logging
 import os
 import posixpath
 import shutil
+from django.conf import settings
 from django.core.cache import cache
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
@@ -42,6 +43,7 @@ def video_pre_delete(sender, instance, **kwargs):
     Delete video files and related HLS folders when a video is deleted.
     """
     _delete_original_video_file(instance)
+    _delete_own_hls_folder(instance)
     video_dirs = _delete_all_hls_and_collect_dirs(instance)
     _delete_empty_video_dirs(video_dirs)
     _delete_thumbnail_file(instance)
@@ -54,6 +56,17 @@ def _delete_original_video_file(instance):
     if instance.video_file and default_storage.exists(instance.video_file.name):
         default_storage.delete(instance.video_file.name)
         logger.info("Original file of video %s deleted from storage.", instance.pk)
+
+
+def _delete_own_hls_folder(instance):
+    """
+    Delete hls/<pk>, which belongs to this video alone, even if no resolution row exists
+    (a stopped conversion leaves segments behind). The name is the integer pk, nothing else.
+    """
+    own_dir = os.path.join(settings.MEDIA_ROOT, "hls", str(int(instance.pk)))
+    if os.path.isdir(own_dir) and not os.path.islink(own_dir):
+        shutil.rmtree(own_dir, ignore_errors=True)
+        logger.info("HLS folder of video %s deleted.", instance.pk)
 
 
 def _delete_all_hls_and_collect_dirs(instance):

@@ -659,6 +659,78 @@ class ThrottlingTests(APITestCase):
                 self.assertEqual(self.client.post(url, data, format="json").status_code, 429)
 
 
+@override_settings(
+    # Admin pages need static files; the manifest only exists after collectstatic (prod image).
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+)
+class AdminLoginThrottlingTests(APITestCase):
+    """
+    The Django admin login, also used by the RQ dashboard, has the same limit as the API login
+    (X5 finding 3): 5 POST per minute per IP, with one counter for both.
+    """
+
+    url = "/admin/login/"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def _login(self, password="wrong", **extra):
+        return self.client.post(self.url, {"username": "root@test.de", "password": password}, **extra)
+
+    def test_login_is_limited_per_ip(self):
+        for _ in range(5):
+            self.assertEqual(self._login().status_code, 200)
+        response = self._login()
+        self.assertEqual(response.status_code, 429)
+        self.assertTrue(response["Retry-After"])
+
+    def test_limit_is_per_ip(self):
+        for _ in range(5):
+            self._login(REMOTE_ADDR="10.0.0.1")
+        self.assertEqual(self._login(REMOTE_ADDR="10.0.0.2").status_code, 200)
+
+    def test_spoofed_forwarded_for_does_not_bypass_limit(self):
+        for i in range(5):
+            self._login(HTTP_X_FORWARDED_FOR=f"203.0.113.{i}")
+        self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.99").status_code, 429)
+
+    def test_behind_one_proxy_the_forwarded_client_ip_counts(self):
+        with override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}):
+            for _ in range(5):
+                self._login(HTTP_X_FORWARDED_FOR="203.0.113.1")
+            self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.1").status_code, 429)
+            self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.2").status_code, 200)
+
+    def test_over_the_limit_no_password_is_checked(self):
+        with patch("django.contrib.auth.forms.authenticate", return_value=None) as authenticate:
+            for _ in range(5):
+                self._login()
+            self.assertEqual(authenticate.call_count, 5)
+            self.assertEqual(self._login().status_code, 429)
+            self.assertEqual(authenticate.call_count, 5)
+
+    def test_get_stays_free(self):
+        for _ in range(6):
+            self._login()
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_api_login_and_admin_login_share_one_counter(self):
+        for _ in range(5):
+            self.client.post(
+                "/api/login/", {"email": "nobody@test.de", "password": "wrong"}, format="json"
+            )
+        self.assertEqual(self._login().status_code, 429)
+
+    def test_staff_can_still_log_in(self):
+        CustomUser.objects.create_superuser(username="root", email="root@test.de", password="Root123!")
+        response = self._login(password="Root123!")
+        self.assertEqual(response.status_code, 302)
+
+
 class DemoAccountTests(APITestCase):
     """
     Demo accounts (VFX-28, masterplan E11, G2, G5, G6).

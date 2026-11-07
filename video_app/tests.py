@@ -47,7 +47,6 @@ def ffprobe_output(format_name=MP4_FORMAT, duration="30.0", has_video=True, retu
     )
 
 
-
 class HlsCommandTests(SimpleTestCase):
     def test_segments_are_four_seconds_with_fixed_keyframes(self):
         # Short segments start faster; keyframes at fixed times keep every segment 4 s long.
@@ -57,6 +56,11 @@ class HlsCommandTests(SimpleTestCase):
             cmd[cmd.index("-force_key_frames") + 1], "expr:gte(t,n_forced*4)"
         )
         self.assertEqual(cmd[cmd.index("-sc_threshold") + 1], "0")
+
+    def test_encoder_uses_a_slower_preset_for_smaller_segments(self):
+        cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720)
+        self.assertEqual(cmd[cmd.index("-preset") + 1], "veryfast")
+        self.assertEqual(cmd[cmd.index("-crf") + 1], "28")
 
 
 class VideoAppIntegrationTests(APITestCase):

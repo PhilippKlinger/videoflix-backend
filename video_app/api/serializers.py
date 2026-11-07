@@ -9,7 +9,9 @@ from .utils import (
     ALLOWED_UPLOAD_EXTENSIONS,
     MAX_UPLOAD_SIZE,
     MAX_VIDEO_DURATION_SECONDS,
+    MAX_VIDEO_FPS,
     MAX_VIDEO_PIXELS,
+    parse_frame_rate,
     probe_video,
 )
 
@@ -94,7 +96,7 @@ class VideoSerializer(serializers.ModelSerializer):
 
     def _validate_video_content(self, value):
         """
-        Check the real container, a video stream, the duration and the frame size with ffprobe.
+        Check the real container, a video stream, the duration, frame size and frame rate with ffprobe.
         """
         probe = probe_video(value)
         if not probe or not probe.get("streams"):
@@ -114,12 +116,15 @@ class VideoSerializer(serializers.ModelSerializer):
 
     def _validate_video_stream(self, stream):
         """
-        Reject frames over the pixel limit. Over -max_pixels ffprobe can exit 0 and report 0x0,
-        so a missing size counts as too large.
+        Reject frames over the pixel limit and rates over the fps limit. Over -max_pixels ffprobe
+        can exit 0 and report 0x0, so a missing size counts as too large. An unknown rate passes:
+        headers can lie anyway, so -fpsmax and the conversion timeout limit the worker.
         """
         pixels = stream.get("width", 0) * stream.get("height", 0)
         if not 0 < pixels <= MAX_VIDEO_PIXELS:
             raise serializers.ValidationError("The video resolution must not be higher than 3840x2160.")
+        if parse_frame_rate(stream.get("avg_frame_rate")) > MAX_VIDEO_FPS:
+            raise serializers.ValidationError("The video must not have more than 120 frames per second.")
 
     def validate(self, data):
         """

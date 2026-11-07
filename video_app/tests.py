@@ -35,12 +35,13 @@ MP4_FORMAT = "mov,mp4,m4a,3gp,3g2,mj2"
 
 
 def ffprobe_output(
-    format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0, width=1920, height=1080
+    format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0, width=1920, height=1080,
+    avg_frame_rate="30/1",
 ):
     """
     Fake result of the ffprobe process; tests replace only the process call.
     """
-    video_stream = {"codec_type": "video", "width": width, "height": height}
+    video_stream = {"codec_type": "video", "width": width, "height": height, "avg_frame_rate": avg_frame_rate}
     data = {
         "streams": [video_stream] if has_video else [],
         "format": {"format_name": format_name, "duration": duration},
@@ -495,6 +496,17 @@ class VideoAppIntegrationTests(APITestCase):
         entries = cmd[cmd.index("-show_entries") + 1]
         self.assertIn("width", entries)
         self.assertIn("height", entries)
+
+    def test_ffprobe_reads_the_frame_rate(self):
+        cmd = utils.get_ffprobe_command("input")
+        self.assertIn("avg_frame_rate", cmd[cmd.index("-show_entries") + 1])
+
+    def test_hls_output_is_capped_at_60_fps(self):
+        # X5 finding 5: the file header can lie about the frame rate, so the output is capped too.
+        cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720)
+        self.assertEqual(cmd[cmd.index("-fpsmax") + 1], "60")
+        # An output option, so it goes after the input.
+        self.assertGreater(cmd.index("-fpsmax"), cmd.index("input"))
 
     def test_get_ffmpeg_hls_command(self):
         cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "height", 720)
@@ -1063,6 +1075,30 @@ class UploadValidationTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("resolution", str(response.data["video_file"]))
 
+    # --- FRAME RATE ---
+    def test_video_of_up_to_120_fps_is_accepted(self):
+        for rate in ["120/1", "30000/1001"]:
+            with self.subTest(rate=rate):
+                Video.objects.filter(owner=self.member).delete()
+                self.mock_run.return_value = ffprobe_output(avg_frame_rate=rate)
+                self.assertEqual(self._upload().status_code, 201)
+
+    def test_video_over_120_fps_is_rejected(self):
+        for rate in ["121/1", "120001/1000", "1000/1"]:
+            with self.subTest(rate=rate):
+                self.mock_run.return_value = ffprobe_output(avg_frame_rate=rate)
+                response = self._upload()
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("frames per second", str(response.data["video_file"]))
+
+    def test_unknown_frame_rate_does_not_break_the_check(self):
+        # Not rejected: -fpsmax and the conversion timeout still limit such a file in the worker.
+        for rate in ["0/0", "1/0", "", "abc", "30/x", None]:
+            with self.subTest(rate=rate):
+                Video.objects.filter(owner=self.member).delete()
+                self.mock_run.return_value = ffprobe_output(avg_frame_rate=rate)
+                self.assertEqual(self._upload().status_code, 201)
+
     def test_ffprobe_reads_the_uploaded_file_and_temp_copy_is_removed(self):
         self._upload()
         command = self.mock_run.call_args.args[0]
@@ -1325,6 +1361,58 @@ class MediaProtectionTests(APITestCase):
         self.assertEqual(len(commands), 3)
         for cmd in commands:
             self.assertNotIn("-t", cmd)
+
+    # --- CONVERSION TIME ---
+    def _owned_video(self, name="limited"):
+        return Video.objects.create(
+            title="Timed", description="d", category="Comedy", owner=self.alice,
+            video_file=self._write(f"videos/{name}.mp4", b"ORIGINAL"),
+        )
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_owned_video_has_a_time_limit_per_resolution(self, mock_run):
+        convert_video(self._owned_video().id)
+        self.assertEqual([call.kwargs["timeout"] for call in mock_run.call_args_list], [300, 300, 300])
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_standard_video_has_no_time_limit(self, mock_run):
+        video = Video.objects.create(
+            title="Catalog", description="d", category="Comedy",
+            video_file=self._write("videos/catalog.mp4", b"ORIGINAL"),
+        )
+        convert_video(video.id)
+        self.assertEqual([call.kwargs.get("timeout") for call in mock_run.call_args_list], [None, None, None])
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_timeout_fails_the_video_and_stops_the_conversion(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(["ffmpeg"], 300)
+        video = self._owned_video("timeout")
+        convert_video(video.id)
+        self.assertEqual(mock_run.call_count, 1)
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
+        self.assertEqual(video.resolutions.count(), 0)
+        self.assertEqual(video.video_file.name, "videos/timeout.mp4")
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_owned_video_stops_after_the_first_failed_resolution(self, mock_run):
+        mock_run.side_effect = [MagicMock(), subprocess.CalledProcessError(1, ["ffmpeg"])]
+        video = self._owned_video("second")
+        convert_video(video.id)
+        self.assertEqual(mock_run.call_count, 2)
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
+        self.assertEqual(video.resolutions.count(), 1)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_standard_video_still_tries_every_resolution(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["ffmpeg"])
+        video = Video.objects.create(
+            title="Catalog", description="d", category="Comedy",
+            video_file=self._write("videos/catalog.mp4", b"ORIGINAL"),
+        )
+        convert_video(video.id)
+        self.assertEqual(mock_run.call_count, 3)
 
     # --- HLS FOLDER CLEANUP ---
     def test_deleting_a_video_removes_its_folder_even_without_resolution_rows(self):

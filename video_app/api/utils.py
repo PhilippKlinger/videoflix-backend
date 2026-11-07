@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+from fractions import Fraction
 
 # Only standard videos are cached; private uploads never enter the shared cache.
 STANDARD_VIDEOS_CACHE_KEY = "all_videos"
@@ -16,6 +17,9 @@ MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_VIDEO_DURATION_SECONDS = 120
 MAX_UPLOADS_PER_ACCOUNT = 2
 MAX_VIDEO_PIXELS = 8294400  # 3840 x 2160
+MAX_VIDEO_FPS = 120
+# Per resolution, for uploads only: a small file with many frames must not block the single worker.
+UPLOAD_CONVERSION_TIMEOUT_SECONDS = 300
 
 # Uploads are untrusted: a crafted file must not make ffmpeg or ffprobe open URLs.
 LOCAL_FILES_ONLY = ["-protocol_whitelist", "file"]
@@ -104,6 +108,8 @@ def get_ffmpeg_hls_command(input_path, output_dir, base_name, height, max_second
         "-i",
         input_path,
         *limit,
+        "-fpsmax",
+        "60",
         "-vf",
         f"scale=-2:{height}",
         "-c:v",
@@ -143,13 +149,23 @@ def get_ffprobe_command(input_path):
         "-select_streams",
         "v",
         "-show_entries",
-        "stream=codec_type,width,height:format=format_name,duration",
+        "stream=codec_type,width,height,avg_frame_rate:format=format_name,duration",
         "-of",
         "json",
         *LOCAL_FILES_ONLY,
         *PIXEL_LIMIT,
         input_path,
     ]
+
+
+def parse_frame_rate(value):
+    """
+    Return the frame rate from ffprobe's "num/den" text, or 0 if it is unknown (0/0, malformed).
+    """
+    try:
+        return Fraction(value)
+    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+        return 0
 
 
 def probe_video(uploaded_file):

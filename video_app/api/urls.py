@@ -10,6 +10,7 @@ from .views import (
     VideoListView,
     VideoDetailView,
     VideoClearCache,
+    VideoStreamsView,
     VideoThumbnailView,
 )
 
@@ -26,6 +27,11 @@ urlpatterns = [
         "video/<int:video_id>/thumbnail/",
         VideoThumbnailView.as_view(),
         name="video-thumbnail",
+    ),
+    path(
+        "video/<int:video_id>/streams/",
+        VideoStreamsView.as_view(),
+        name="video-streams",
     ),
     path(
         "video/<int:video_id>/<str:resolution>/<str:filename>",

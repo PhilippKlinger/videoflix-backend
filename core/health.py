@@ -42,7 +42,7 @@ class VersionView(views.APIView):
     throttle_classes = []
 
     def get(self, request):
-        return Response({"commit": settings.GIT_SHA, "build_time": settings.BUILD_TIME})
+        return Response({"sha": settings.GIT_SHA, "builtAt": settings.BUILD_TIME})
 
 
 def _check_database():

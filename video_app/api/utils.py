@@ -79,31 +79,44 @@ def get_ffmpeg_thumbnail_command(input_path, output_path, seek=THUMBNAIL_SEEK):
     ]
 
 
-def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
+# Short segments let playback start sooner; keyframes at fixed times keep every segment this long.
+HLS_SEGMENT_SECONDS = 4
+
+
+def get_ffmpeg_hls_command(input_path, output_dir, base_name, height, max_seconds=None):
     """
     Return the ffmpeg command and output path for creating HLS segments and playlist.
+
+    With max_seconds the output is cut off there, whatever length the file header claims.
     """
     playlist_path = os.path.join(output_dir, "index.m3u8")
     segment_path = os.path.join(output_dir, "index%03d.ts")
+    # An output option, so it goes after -i.
+    limit = ["-t", str(max_seconds)] if max_seconds else []
     return [
         "ffmpeg",
         *LOCAL_FILES_ONLY,
         "-i",
         input_path,
+        *limit,
         "-vf",
         f"scale=-2:{height}",
         "-c:v",
         "libx264",
         "-preset",
-        "ultrafast",
+        "veryfast",
         "-crf",
-        "32",
+        "28",
         "-c:a",
         "aac",
         "-b:a",
         "128k",
+        "-force_key_frames",
+        f"expr:gte(t,n_forced*{HLS_SEGMENT_SECONDS})",
+        "-sc_threshold",
+        "0",
         "-hls_time",
-        "16",
+        str(HLS_SEGMENT_SECONDS),
         "-hls_list_size",
         "0",
         "-hls_segment_filename",

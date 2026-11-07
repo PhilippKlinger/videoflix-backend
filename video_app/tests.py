@@ -1519,3 +1519,157 @@ class ShrinkThumbnailsCommandTests(APITestCase):
         output = self._shrink()
         self.assertEqual(self._size_of(video), (1280, 720))
         self.assertIn("1 missing", output)
+
+
+class VideoStreamsTests(APITestCase):
+    """
+    Stream statistics endpoint: values come from the real playlist and segment files,
+    visibility is the same as for the stream itself.
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media_root)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+        self.alice = CustomUser.objects.create_user(
+            username="alice", email="alice@test.de", password="pw", is_active=True
+        )
+        self.bob = CustomUser.objects.create_user(
+            username="bob", email="bob@test.de", password="pw", is_active=True
+        )
+        self.alice_client = APIClient()
+        self.alice_client.force_authenticate(user=self.alice)
+        self.bob_client = APIClient()
+        self.bob_client.force_authenticate(user=self.bob)
+        self.video = Video.objects.create(
+            title="Alice upload", description="d", category="Comedy", owner=self.alice
+        )
+
+    def _write(self, relative_path, content):
+        path = os.path.join(self.media_root, relative_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(content)
+
+    def _stream(self, resolution, segments, target=4, video=None, lines=None):
+        """Create a resolution with a playlist; segments is a list of (name, seconds, bytes or None)."""
+        folder = f"hls/clip/{resolution}"
+        body = ["#EXTM3U", "#EXT-X-VERSION:3", f"#EXT-X-TARGETDURATION:{target}"]
+        for name, seconds, size in segments:
+            body += [f"#EXTINF:{seconds:.6f},", name]
+            if size is not None:
+                self._write(f"{folder}/{name}", b"x" * size)
+        body += lines or []
+        body.append("#EXT-X-ENDLIST")
+        self._write(f"{folder}/index.m3u8", "\n".join(body).encode())
+        VideoResolution.objects.create(
+            original_video=video or self.video,
+            resolution=resolution,
+            converted_file=f"{folder}/index.m3u8",
+        )
+
+    def _get(self, client=None, video=None):
+        return (client or self.alice_client).get(f"/api/video/{(video or self.video).pk}/streams/")
+
+    def test_returns_values_computed_from_the_files(self):
+        self._stream("720p", [("index000.ts", 4.0, 1000), ("index001.ts", 4.0, 3000)])
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "streams": [
+                    {
+                        "resolution": "720p",
+                        "bitrate_kbps": 4,
+                        "segment_count": 2,
+                        "segment_seconds": 4,
+                        "duration_seconds": 8.0,
+                        "size_bytes": 4000,
+                    }
+                ]
+            },
+        )
+
+    def test_old_upload_reports_sixteen_second_segments(self):
+        self._stream("480p", [("index000.ts", 16.0, 10), ("index001.ts", 12.5, 10)], target=16)
+        stream = self._get().json()["streams"][0]
+        self.assertEqual(stream["segment_seconds"], 16)
+        self.assertEqual(stream["duration_seconds"], 28.5)
+
+    def test_streams_are_ordered_by_resolution_descending(self):
+        for resolution in ["480p", "1080p", "720p"]:
+            self._stream(resolution, [("index000.ts", 4.0, 10)])
+        resolutions = [s["resolution"] for s in self._get().json()["streams"]]
+        self.assertEqual(resolutions, ["1080p", "720p", "480p"])
+
+    def test_foreign_private_video_is_404(self):
+        self._stream("720p", [("index000.ts", 4.0, 10)])
+        self.assertEqual(self._get(client=self.bob_client).status_code, 404)
+
+    def test_standard_video_is_visible_to_any_account(self):
+        standard = Video.objects.create(title="Standard", description="d", category="Action")
+        self._stream("720p", [("index000.ts", 4.0, 10)], video=standard)
+        response = self._get(client=self.bob_client, video=standard)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["streams"]), 1)
+
+    def test_login_is_required(self):
+        response = APIClient().get(f"/api/video/{self.video.pk}/streams/")
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_video_without_resolutions_returns_empty_list(self):
+        self.assertEqual(self._get().json(), {"streams": []})
+
+    def test_missing_playlist_or_segment_skips_that_stream(self):
+        self._stream("1080p", [("index000.ts", 4.0, 10)])
+        self._stream("720p", [("index000.ts", 4.0, None)])  # segment missing on disk
+        VideoResolution.objects.create(
+            original_video=self.video, resolution="480p", converted_file="hls/clip/480p/index.m3u8"
+        )  # playlist missing on disk
+        VideoResolution.objects.create(original_video=self.video, resolution="360p", converted_file="")
+        resolutions = [s["resolution"] for s in self._get().json()["streams"]]
+        self.assertEqual(resolutions, ["1080p"])
+
+    def test_playlist_without_duration_is_skipped(self):
+        self._write("hls/clip/720p/index.m3u8", b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n")
+        VideoResolution.objects.create(
+            original_video=self.video, resolution="720p", converted_file="hls/clip/720p/index.m3u8"
+        )
+        self.assertEqual(self._get().json(), {"streams": []})
+
+    def test_unfinished_conversion_reports_the_segments_so_far(self):
+        self._stream("720p", [("index000.ts", 4.0, 100)])
+        playlist = os.path.join(self.media_root, "hls/clip/720p/index.m3u8")
+        with open(playlist, "rb") as f:
+            content = f.read().replace(b"#EXT-X-ENDLIST", b"")
+        with open(playlist, "wb") as f:
+            f.write(content)
+        self.assertEqual(self._get().json()["streams"][0]["segment_count"], 1)
+
+    def test_segment_name_with_path_is_ignored(self):
+        self._write("hls/secret.ts", b"s" * 5000)
+        outside = os.path.join(self.media_root, "hls", "secret.ts")
+        names = ["../../secret.ts", "..\\..\\secret.ts", outside, "/etc/passwd.ts", "http://host/a.ts", "sub/a.ts"]
+        segments = [("index000.ts", 4.0, 1000)] + [(n, 4.0, None) for n in names]
+        self._stream("720p", segments)
+        stream = self._get().json()["streams"][0]
+        self.assertEqual(stream["size_bytes"], 1000)
+        self.assertEqual(stream["segment_count"], 1)
+        self.assertEqual(stream["duration_seconds"], 4.0)
+
+    def test_segment_that_is_a_link_to_a_file_outside_is_not_counted(self):
+        self._write("hls/secret.ts", b"s" * 5000)
+        folder = os.path.join(self.media_root, "hls", "clip", "720p")
+        os.makedirs(folder, exist_ok=True)
+        try:
+            os.symlink(os.path.join(self.media_root, "hls", "secret.ts"), os.path.join(folder, "index001.ts"))
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks not available")
+        self._stream("720p", [("index000.ts", 4.0, 1000)], lines=["#EXTINF:4.000000,", "index001.ts"])
+        # The linked segment counts as missing, so the stream is skipped instead of leaking its size.
+        self.assertEqual(self._get().json(), {"streams": []})

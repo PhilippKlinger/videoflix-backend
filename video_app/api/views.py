@@ -3,6 +3,7 @@ API views for video upload, listing, detail, conversion progress, cache, and HLS
 """
 
 import os
+from django.core.exceptions import SuspiciousFileOperation
 from django.http import FileResponse, Http404, HttpResponseNotModified
 from django.utils.http import http_date
 from django.views.static import was_modified_since
@@ -18,6 +19,7 @@ from accounts_app.api.utils import is_admin
 from video_app.models import Video, VideoProgress
 from .permissions import can_change_video, visible_videos
 from .serializers import SharedVideoSerializer, VideoSerializer
+from .streams import read_stream_stats
 from .utils import MAX_UPLOADS_PER_ACCOUNT, STANDARD_VIDEOS_CACHE_KEY
 from django.core.cache import cache
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -222,6 +224,42 @@ class VideoHLSServeView(views.APIView):
         # Private media: browsers may cache, shared proxies must not.
         response["Cache-Control"] = "private"
         return response
+
+
+def _resolution_height(video_res):
+    # Numeric order ("1080p" before "720p"); names without a number go last.
+    digits = video_res.resolution.rstrip("p")
+    return int(digits) if digits.isdigit() else -1
+
+
+class VideoStreamsView(views.APIView):
+    """
+    API view with statistics of every converted stream of a video the user may see.
+
+    Values are read from the playlist and segment files; streams that cannot be read
+    (still converting, files missing) are left out.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, video_id):
+        video = _get_video_or_404(request.user, video_id)
+        resolutions = sorted(video.resolutions.all(), key=_resolution_height, reverse=True)
+        streams = []
+        for video_res in resolutions:
+            stats = self._read_stats(video_res)
+            if stats:
+                streams.append({"resolution": video_res.resolution, **stats})
+        return Response({"streams": streams})
+
+    def _read_stats(self, video_res):
+        if not video_res.converted_file:
+            return None
+        try:
+            playlist_path = video_res.converted_file.path
+        except SuspiciousFileOperation:
+            return None
+        return read_stream_stats(playlist_path)
 
 
 class VideoThumbnailView(views.APIView):

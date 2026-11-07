@@ -34,12 +34,15 @@ PLAIN_STATIC_STORAGES = {
 MP4_FORMAT = "mov,mp4,m4a,3gp,3g2,mj2"
 
 
-def ffprobe_output(format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0):
+def ffprobe_output(
+    format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0, width=1920, height=1080
+):
     """
     Fake result of the ffprobe process; tests replace only the process call.
     """
+    video_stream = {"codec_type": "video", "width": width, "height": height}
     data = {
-        "streams": [{"codec_type": "video"}] if has_video else [],
+        "streams": [video_stream] if has_video else [],
         "format": {"format_name": format_name, "duration": duration},
     }
     return subprocess.CompletedProcess(
@@ -473,6 +476,25 @@ class VideoAppIntegrationTests(APITestCase):
             position = cmd.index("-protocol_whitelist")
             self.assertEqual(cmd[position + 1], "file")
             self.assertLess(position, cmd.index("input"))
+
+    def test_ffmpeg_commands_refuse_frames_over_the_pixel_limit(self):
+        # X5 finding 4: a small crafted file must not claim many GB of memory while decoding.
+        commands = [
+            utils.get_ffmpeg_thumbnail_command("input", "output"),
+            utils.get_ffmpeg_hls_command("input", "output", "base", 720)[0],
+            utils.get_ffprobe_command("input"),
+        ]
+        for cmd in commands:
+            position = cmd.index("-max_pixels")
+            self.assertEqual(cmd[position + 1], "8294400")
+            # An input option only works in front of the input.
+            self.assertLess(position, cmd.index("input"))
+
+    def test_ffprobe_reads_the_frame_size(self):
+        cmd = utils.get_ffprobe_command("input")
+        entries = cmd[cmd.index("-show_entries") + 1]
+        self.assertIn("width", entries)
+        self.assertIn("height", entries)
 
     def test_get_ffmpeg_hls_command(self):
         cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "height", 720)
@@ -1018,6 +1040,28 @@ class UploadValidationTests(APITestCase):
         response = self._upload()
         self.assertEqual(response.status_code, 400)
         self.assertIn("video_file", response.data)
+
+    # --- FRAME SIZE ---
+    def test_video_of_exactly_the_pixel_limit_is_accepted(self):
+        for width, height in [(3840, 2160), (2160, 3840)]:
+            with self.subTest(width=width, height=height):
+                Video.objects.filter(owner=self.member).delete()
+                self.mock_run.return_value = ffprobe_output(width=width, height=height)
+                self.assertEqual(self._upload().status_code, 201)
+
+    def test_video_over_the_pixel_limit_is_rejected(self):
+        self.mock_run.return_value = ffprobe_output(width=3841, height=2160)
+        response = self._upload()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("resolution", str(response.data["video_file"]))
+        self.assertFalse(Video.objects.filter(title="Clip").exists())
+
+    def test_video_without_a_known_frame_size_is_rejected(self):
+        # Over -max_pixels ffprobe exits 0 and reports a PNG-in-MOV stream as 0x0 (real run).
+        self.mock_run.return_value = ffprobe_output(width=0, height=0)
+        response = self._upload()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("resolution", str(response.data["video_file"]))
 
     def test_ffprobe_reads_the_uploaded_file_and_temp_copy_is_removed(self):
         self._upload()

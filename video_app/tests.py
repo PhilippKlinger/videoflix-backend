@@ -8,6 +8,7 @@ from io import StringIO
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.http import Http404
 from django.test import SimpleTestCase, override_settings
 from django.urls import Resolver404, resolve, reverse
@@ -1327,12 +1328,40 @@ class ImportCatalogCommandTests(APITestCase):
         queue = patch("video_app.api.signals.django_rq.get_queue")
         self.queue = queue.start()
         self.addCleanup(queue.stop)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        cache.delete(STANDARD_VIDEOS_CACHE_KEY)
+        self.addCleanup(cache.delete, STANDARD_VIDEOS_CACHE_KEY)
 
-    def _import(self):
+    def _import(self, *args, stderr=None):
         out = StringIO()
-        with override_settings(MEDIA_ROOT=self.media):
-            call_command("import_catalog", self.source, stdout=out)
+        call_command("import_catalog", self.source, *args, stdout=out, stderr=stderr or StringIO())
         return out.getvalue()
+
+    def _stored_standard_video(self, title="Old clip"):
+        """
+        Standard or private video with a real original, thumbnail and HLS folder in MEDIA_ROOT.
+        """
+        video = Video.objects.create(title=title, description="d", category="Comedy")
+        video.video_file.save(f"{title}.mp4", SimpleUploadedFile("x.mp4", b"original"), save=False)
+        video.thumbnail_url.save(f"{title}.jpg", SimpleUploadedFile("x.jpg", b"thumb"), save=False)
+        video.save()
+        hls_dir = os.path.join(self.media, "hls", title, "720p")
+        os.makedirs(hls_dir)
+        with open(os.path.join(hls_dir, "index.m3u8"), "wb") as f:
+            f.write(b"#EXTM3U")
+        VideoResolution.objects.create(
+            original_video=video, resolution="720p", converted_file=f"hls/{title}/720p/index.m3u8"
+        )
+        return video
+
+    def _stored_files(self, video):
+        return [
+            os.path.join(self.media, video.video_file.name),
+            os.path.join(self.media, video.thumbnail_url.name),
+            os.path.join(self.media, "hls", video.title, "720p", "index.m3u8"),
+        ]
 
     def test_imports_every_mp4_as_standard_video_with_category_from_the_name(self):
         self._import()
@@ -1356,6 +1385,86 @@ class ImportCatalogCommandTests(APITestCase):
         output = self._import()
         self.assertEqual(Video.objects.count(), 3)
         self.assertIn("0 imported, 3 skipped", output)
+
+    def test_uses_title_description_and_category_from_catalog(self):
+        catalog = {"segelschiff_mstery": {"title": "Sailing Ship", "description": "A ship at sea.", "category": "Crime"}}
+        with patch("video_app.management.commands.import_catalog.load_catalog", return_value=catalog):
+            self._import()
+        video = Video.objects.get(title="Sailing Ship")
+        self.assertEqual(video.description, "A ship at sea.")
+        self.assertEqual(video.category, "Crime")
+
+    def test_unknown_file_falls_back_to_file_name_and_warns(self):
+        stderr = StringIO()
+        with patch("video_app.management.commands.import_catalog.load_catalog", return_value={}):
+            self._import(stderr=stderr)
+        video = Video.objects.get(title="Golf")
+        self.assertEqual(video.category, "Sports")
+        self.assertEqual(video.description, "Sample clip from the Videoflix demo catalog.")
+        self.assertIn("golf_sports", stderr.getvalue())
+
+    def test_catalog_descriptions_are_unique_and_categories_valid(self):
+        from video_app.management.commands.import_catalog import CATALOG_PATH
+
+        with open(CATALOG_PATH, encoding="utf-8") as f:
+            catalog = json.load(f)
+        categories = {value for value, _ in Video.CATEGORY_CHOICES}
+        for name, entry in catalog.items():
+            self.assertEqual(set(entry), {"title", "description", "category"}, name)
+            self.assertTrue(entry["title"].strip() and entry["description"].strip(), name)
+            self.assertLessEqual(len(entry["title"]), 150, name)
+            self.assertLessEqual(len(entry["description"]), 500, name)
+            self.assertIn(entry["category"], categories, name)
+        descriptions = [entry["description"] for entry in catalog.values()]
+        self.assertEqual(len(descriptions), len(set(descriptions)))
+
+    def test_replace_deletes_standard_videos_and_their_files(self):
+        old = self._stored_standard_video()
+        files = self._stored_files(old)
+        self.assertTrue(all(os.path.exists(path) for path in files))
+        self._import("--replace")
+        self.assertFalse(Video.objects.filter(pk=old.pk).exists())
+        self.assertFalse(any(os.path.exists(path) for path in files))
+        self.assertEqual(set(Video.objects.values_list("title", flat=True)), {"Golf", "Segelschiff", "Bird 2"})
+
+    def test_replace_keeps_uploads_of_users(self):
+        user = CustomUser.objects.create_user(email="owner@example.com", password="Passw0rd!x")
+        upload = self._stored_standard_video("Mine")
+        Video.objects.filter(pk=upload.pk).update(owner=user)
+        files = self._stored_files(upload)
+        self._import("--replace")
+        self.assertTrue(Video.objects.filter(pk=upload.pk, owner=user).exists())
+        self.assertTrue(all(os.path.exists(path) for path in files))
+
+    def test_replace_clears_the_standard_video_cache(self):
+        cache.set(STANDARD_VIDEOS_CACHE_KEY, ["stale"])
+        self._import("--replace")
+        self.assertIsNone(cache.get(STANDARD_VIDEOS_CACHE_KEY))
+
+    def test_replace_with_empty_folder_fails_and_deletes_nothing(self):
+        old = self._stored_standard_video()
+        empty = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        with open(os.path.join(empty, "notes.txt"), "wb") as f:
+            f.write(b"no clips")
+        for folder in (empty, os.path.join(empty, "missing")):
+            with self.assertRaises(CommandError):
+                call_command("import_catalog", folder, "--replace", stdout=StringIO())
+        self.assertTrue(Video.objects.filter(pk=old.pk).exists())
+        self.assertTrue(all(os.path.exists(path) for path in self._stored_files(old)))
+
+    def test_replace_refuses_a_folder_that_holds_the_stored_files(self):
+        old = self._stored_standard_video()
+        stored_dir = os.path.dirname(os.path.join(self.media, old.video_file.name))
+        with self.assertRaises(CommandError):
+            call_command("import_catalog", stored_dir, "--replace", stdout=StringIO())
+        self.assertTrue(Video.objects.filter(pk=old.pk).exists())
+        self.assertTrue(all(os.path.exists(path) for path in self._stored_files(old)))
+
+    def test_import_leaves_source_files_in_place(self):
+        self._import("--replace")
+        for name in ("golf_sports.mp4", "segelschiff_mstery.mp4", "more clips/bird_2.mp4"):
+            self.assertTrue(os.path.exists(os.path.join(self.source, name)), name)
 
 
 class ShrinkThumbnailsCommandTests(APITestCase):

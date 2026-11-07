@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
 from django.core.management import call_command
 from django.http import Http404
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from django.urls import Resolver404, resolve, reverse
 from rest_framework.test import APIClient, APITestCase
 from rest_framework import status
@@ -42,6 +42,18 @@ def ffprobe_output(format_name=MP4_FORMAT, duration="30.0", has_video=True, retu
     return subprocess.CompletedProcess(
         args=["ffprobe"], returncode=returncode, stdout=json.dumps(data), stderr=""
     )
+
+
+
+class HlsCommandTests(SimpleTestCase):
+    def test_segments_are_four_seconds_with_fixed_keyframes(self):
+        # Short segments start faster; keyframes at fixed times keep every segment 4 s long.
+        cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720)
+        self.assertEqual(cmd[cmd.index("-hls_time") + 1], "4")
+        self.assertEqual(
+            cmd[cmd.index("-force_key_frames") + 1], "expr:gte(t,n_forced*4)"
+        )
+        self.assertEqual(cmd[cmd.index("-sc_threshold") + 1], "0")
 
 
 class VideoAppIntegrationTests(APITestCase):

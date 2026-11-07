@@ -79,6 +79,10 @@ def get_ffmpeg_thumbnail_command(input_path, output_path, seek=THUMBNAIL_SEEK):
     ]
 
 
+# Short segments let playback start sooner; keyframes at fixed times keep every segment this long.
+HLS_SEGMENT_SECONDS = 4
+
+
 def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
     """
     Return the ffmpeg command and output path for creating HLS segments and playlist.
@@ -102,8 +106,12 @@ def get_ffmpeg_hls_command(input_path, output_dir, base_name, height):
         "aac",
         "-b:a",
         "128k",
+        "-force_key_frames",
+        f"expr:gte(t,n_forced*{HLS_SEGMENT_SECONDS})",
+        "-sc_threshold",
+        "0",
         "-hls_time",
-        "16",
+        str(HLS_SEGMENT_SECONDS),
         "-hls_list_size",
         "0",
         "-hls_segment_filename",

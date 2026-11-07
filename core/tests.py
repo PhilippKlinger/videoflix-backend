@@ -124,10 +124,10 @@ class VersionEndpointTests(APITestCase):
     """
 
     @override_settings(GIT_SHA="abc1234", BUILD_TIME="2026-11-05T12:00:00Z")
-    def test_returns_commit_and_build_time_without_login(self):
+    def test_returns_sha_and_built_at_without_login(self):
         response = self.client.get("/api/version/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"commit": "abc1234", "build_time": "2026-11-05T12:00:00Z"})
+        self.assertEqual(response.data, {"sha": "abc1234", "builtAt": "2026-11-05T12:00:00Z"})
 
     def test_path_without_slash_redirects_to_it(self):
         response = self.client.get("/api/version")

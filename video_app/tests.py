@@ -936,11 +936,11 @@ class VideoOwnershipTests(APITestCase):
             self.assertFalse(os.path.exists(file_path))
             self.assertTrue(Video.objects.filter(pk=self.standard.pk).exists())
 
-    def test_soft_delete_keeps_uploads_for_admin(self):
+    def test_deleting_the_own_account_removes_the_uploads(self):
         response = self.alice_client.delete("/api/delete-account/", {"confirm": True}, format="json")
         self.assertEqual(response.status_code, 204)
         response = self.admin_client.get(f"/api/video/{self.alice_video.pk}/")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 404)
 
     # --- ADMIN ENDPOINTS ---
     def test_member_cannot_clear_cache(self):

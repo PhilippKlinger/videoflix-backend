@@ -69,7 +69,7 @@ class CustomUser(AbstractUser):
         is_active: If the user is active.
         activation_code: Code for account activation and password reset.
         activation_code_expiry: Expiry datetime for the activation code.
-        is_soft_deleted: If the account is soft deleted.
+        is_soft_deleted: Unused, see the comment on the field.
         is_demo: Demo account started without mail; expires after DEMO_LIFETIME.
     """
     custom = models.CharField(max_length=500, blank=True, null=True)
@@ -78,6 +78,7 @@ class CustomUser(AbstractUser):
     is_active = models.BooleanField(default=False)
     activation_code = models.CharField(max_length=40, blank=True, null=True)
     activation_code_expiry = models.DateTimeField(blank=True, null=True)
+    # Unused; only kept so an older image can still run after a rollback. Removal follows after 1.0.
     is_soft_deleted = models.BooleanField(default=False)
     is_demo = models.BooleanField(default=False)
     

@@ -309,28 +309,27 @@ class PasswordResetConfirmView(views.APIView):
             )
 
 
-class SoftDeleteAccountView(views.APIView):
+class DeleteAccountView(views.APIView):
     """
-    API view for soft-deleting (deactivating) the authenticated user's account.
+    Immediately and permanently delete the authenticated user's account with all uploads and
+    their files. This cannot be undone. Requires "confirm": true and clears the auth cookies.
     """
 
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
-        user = request.user
         confirm = request.data.get("confirm", False)
         if not confirm:
             return Response(
                 {"detail": "Please confirm account deletion."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        user.is_active = False
-        user.is_soft_deleted = True
-        user.save()
-        return Response(
-            {"detail": "Account has been deactivated (soft delete)."},
-            status=status.HTTP_204_NO_CONTENT,
-        )
+        # CASCADE removes the rows, the video pre_delete signal removes the files.
+        request.user.delete()
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie("access_token", path="/", samesite="Strict")
+        response.delete_cookie("refresh_token", path="/", samesite="Strict")
+        return response
 
 
 class HardDeleteAccountView(views.APIView):
@@ -351,29 +350,6 @@ class HardDeleteAccountView(views.APIView):
         except CustomUser.DoesNotExist:
             return Response(
                 {"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND
-            )
-
-
-class RestoreAccountView(views.APIView):
-    """
-    API view for admin to restore a deleted a user account.
-    """
-
-    permission_classes = [IsAdminUser]
-
-    def post(self, request, pk):
-        try:
-            user = CustomUser.objects.get(pk=pk, is_soft_deleted=True)
-            user.is_active = True
-            user.is_soft_deleted = False
-            user.save()
-            return Response(
-                {"detail": "Account has been restored."}, status=status.HTTP_200_OK
-            )
-        except CustomUser.DoesNotExist:
-            return Response(
-                {"detail": "User not found or not deleted."},
-                status=status.HTTP_404_NOT_FOUND,
             )
 
 

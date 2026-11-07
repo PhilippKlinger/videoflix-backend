@@ -15,7 +15,7 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
   - Video streaming in multiple resolutions (HLS)
   - Video progress tracking per user
 - **Admin Features**
-  - Soft and hard account deletion, account restoration
+  - Permanent account deletion
   - Admin interface with import/export for data
 - **API Documentation**
   - Interactive Swagger & Redoc docs (auto-generated from code)

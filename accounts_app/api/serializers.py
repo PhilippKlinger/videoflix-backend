@@ -67,7 +67,7 @@ class CustomLoginCookieSerializer(TokenObtainPairSerializer):
             password=password,
         )
 
-        if not user or not user.is_active or getattr(user, "is_soft_deleted", False):
+        if not user or not user.is_active:
             raise serializers.ValidationError(
                 "Please check your entries and try again."
             )

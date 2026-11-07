@@ -12,9 +12,9 @@ class EmailBackend(ModelBackend):
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         UserModel = get_user_model()
-        try:
-            user = UserModel.objects.get(email=username)
-            if user.check_password(password):
-                return user
-        except UserModel.DoesNotExist:
-            return None
+        # The JWT serializer authenticates a second time and passes the address as "email".
+        email = username or kwargs.get(UserModel.USERNAME_FIELD)
+        user = UserModel.objects.find_by_email(email)
+        if user and user.check_password(password):
+            return user
+        return None

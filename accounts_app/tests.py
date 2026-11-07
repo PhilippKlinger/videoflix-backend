@@ -488,6 +488,150 @@ class DeleteOwnAccountTests(APITestCase):
         self.assertFalse([path for path in paths if "restore" in path])
 
 
+class EmailCaseTests(APITestCase):
+    """
+    The case of an address must neither lock anyone out nor create a second account (X4 finding 2).
+
+    New addresses are stored lower-case. Older rows keep their spelling, and two of them may
+    differ only by case: the exact spelling wins, then the oldest row.
+    """
+
+    password = "Secret123!"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        run_mail_jobs_inline(self)
+
+    def _register(self, email):
+        return self.client.post(
+            "/api/register/",
+            {"email": email, "password": self.password, "confirmed_password": self.password},
+        )
+
+    def _user(self, email, password=None, is_active=True):
+        return CustomUser.objects.create_user(
+            username=email, email=email, password=password or self.password, is_active=is_active
+        )
+
+    def _login(self, email, password=None):
+        return self.client.post(
+            "/api/login/", {"email": email, "password": password or self.password}, format="json"
+        )
+
+    def _me(self):
+        return self.client.get("/api/me/").data["email"]
+
+    def _expire_link(self, user):
+        CustomUser.objects.filter(pk=user.pk).update(
+            activation_code_expiry=timezone.now() - timedelta(hours=1)
+        )
+
+    # --- REGISTRATION ---
+    def test_registration_stores_the_address_lower_case(self):
+        self.assertEqual(self._register("Max.Muster@Example.COM").status_code, 201)
+        self.assertEqual(CustomUser.objects.get().email, "max.muster@example.com")
+
+    def test_second_registration_in_any_case_is_rejected(self):
+        self._register("Max.Muster@Example.COM")
+        for email in ["Max.Muster@Example.COM", "max.muster@example.com", "MAX.MUSTER@EXAMPLE.COM"]:
+            with self.subTest(email=email):
+                response = self._register(email)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("email", response.data)
+        self.assertEqual(CustomUser.objects.count(), 1)
+
+    def test_registration_is_rejected_when_an_older_row_differs_by_case(self):
+        self._user("Old.Row@example.com")
+        for email in ["old.row@example.com", "OLD.ROW@EXAMPLE.COM", "Old.Row@example.com"]:
+            with self.subTest(email=email):
+                self.assertEqual(self._register(email).status_code, 400)
+        self.assertEqual(CustomUser.objects.count(), 1)
+
+    # --- LOGIN ---
+    def test_login_works_with_the_spelling_used_at_registration(self):
+        self._register("Max.Muster@Example.COM")
+        CustomUser.objects.update(is_active=True)
+        response = self._login("Max.Muster@Example.COM")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access_token", response.cookies)
+
+    def test_login_finds_an_older_row_in_any_case(self):
+        self._user("Old.Row@example.com")
+        for email in ["old.row@example.com", "OLD.ROW@EXAMPLE.COM", "Old.Row@example.com"]:
+            with self.subTest(email=email):
+                cache.clear()
+                self.assertEqual(self._login(email).status_code, 200)
+
+    def test_login_with_the_wrong_password_stays_rejected(self):
+        self._user("user@example.com")
+        self.assertEqual(self._login("USER@example.com", password="wrong").status_code, 400)
+
+    def test_login_with_two_rows_prefers_the_exact_spelling(self):
+        self._user("Twin@example.com", password="First123!")
+        self._user("twin@example.com", password="Second123!")
+        self.assertEqual(self._login("twin@example.com", password="Second123!").status_code, 200)
+        self.assertEqual(self._me(), "twin@example.com")
+
+    def test_login_with_two_rows_and_another_spelling_takes_the_oldest(self):
+        self._user("Twin@example.com", password="First123!")
+        self._user("twin@example.com", password="Second123!")
+        self.assertEqual(self._login("TWIN@example.com", password="First123!").status_code, 200)
+        self.assertEqual(self._me(), "Twin@example.com")
+        self.assertEqual(self._login("TWIN@example.com", password="Second123!").status_code, 400)
+
+    # --- PASSWORD RESET ---
+    def test_reset_finds_the_account_in_any_case_and_mails_the_stored_address(self):
+        self._user("Old.Row@example.com")
+        response = self.client.post("/api/password_reset/", {"email": "OLD.ROW@EXAMPLE.COM"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["Old.Row@example.com"]])
+
+    def test_reset_with_two_rows_sends_one_mail(self):
+        self._user("Twin@example.com")
+        self._user("twin@example.com")
+        response = self.client.post("/api/password_reset/", {"email": "TWIN@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["Twin@example.com"]])
+
+    def test_reset_skips_an_inactive_row(self):
+        self._user("Twin@example.com", is_active=False)
+        self._user("twin@example.com")
+        self.client.post("/api/password_reset/", {"email": "TWIN@example.com"})
+        self.assertEqual([m.to for m in mail.outbox], [["twin@example.com"]])
+
+    # --- NEW ACTIVATION LINK ---
+    def test_new_link_finds_the_account_in_any_case(self):
+        self._user("Old.Row@example.com", is_active=False)
+        response = self.client.post("/api/request-new-activation-link/", {"email": "OLD.ROW@EXAMPLE.COM"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["Old.Row@example.com"]])
+
+    def test_new_link_with_two_rows_sends_one_mail(self):
+        self._user("Twin@example.com", is_active=False)
+        self._user("twin@example.com", is_active=False)
+        response = self.client.post("/api/request-new-activation-link/", {"email": "twin@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["twin@example.com"]])
+
+    def test_new_link_keeps_a_link_that_is_still_valid(self):
+        self._register("user@example.com")
+        mail.outbox.clear()
+        self.client.post("/api/request-new-activation-link/", {"email": "USER@example.com"})
+        self.assertEqual(mail.outbox, [])
+        self._expire_link(CustomUser.objects.get())
+        self.client.post("/api/request-new-activation-link/", {"email": "USER@example.com"})
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_new_link_without_a_usable_address_stays_neutral(self):
+        for data in [{}, {"email": ["user@example.com"]}, {"email": 5}]:
+            with self.subTest(data=data):
+                cache.clear()
+                response = self.client.post("/api/request-new-activation-link/", data, format="json")
+                self.assertEqual(response.status_code, 200)
+        self.assertEqual(mail.outbox, [])
+
+
 class MailWorkerTests(APITestCase):
     """
     Mails leave through the worker, so an SMTP or Redis outage never fails the request (VFX-52).

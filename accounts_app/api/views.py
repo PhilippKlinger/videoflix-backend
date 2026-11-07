@@ -218,19 +218,16 @@ class RequestNewActivationLinkView(views.APIView):
 
     def post(self, request):
         email = request.data.get("email")
-        try:
-            user = CustomUser.objects.get(email=email, is_active=False)
-            if (
-                not user.activation_code_expiry
-                or timezone.now() > user.activation_code_expiry
-            ):
-                user.activation_code, user.activation_code_expiry = (
-                    generate_activation_code()
-                )
-                user.save()
-                queue_activation_email(user)
-        except CustomUser.DoesNotExist:
-            pass
+        user = CustomUser.objects.find_by_email(email, is_active=False)
+        if user and (
+            not user.activation_code_expiry
+            or timezone.now() > user.activation_code_expiry
+        ):
+            user.activation_code, user.activation_code_expiry = (
+                generate_activation_code()
+            )
+            user.save()
+            queue_activation_email(user)
         return Response(
             {
                 "detail": "If an inactive account with this email exists, a new activation link has been sent."
@@ -252,15 +249,13 @@ class PasswordResetRequestView(views.APIView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
-            try:
-                user = CustomUser.objects.get(email=email, is_active=True)
+            user = CustomUser.objects.find_by_email(email, is_active=True)
+            if user:
                 user.activation_code, user.activation_code_expiry = (
                     generate_activation_code()
                 )
                 user.save()
                 queue_password_reset_email(user)
-            except CustomUser.DoesNotExist:
-                pass
             return Response(
                 {
                     "detail": "If an account with this email exists, a reset link has been sent."

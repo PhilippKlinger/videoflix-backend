@@ -45,6 +45,14 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
 
+    def find_by_email(self, email, **filters):
+        """
+        Find an account whatever the case of the address, or return None.
+        Older rows can differ only by case: the exact spelling wins, then the oldest row.
+        """
+        matches = self.filter(email__iexact=email, **filters)
+        return matches.filter(email=email).first() or matches.order_by("pk").first()
+
     def active_demos(self):
         """
         Demo accounts that have not expired yet.

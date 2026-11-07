@@ -1,1 +1,212 @@
-{}
+{
+  "ak47_schiessstand_action": {
+    "title": "On the Range",
+    "description": "A shooter in ear protection fires a rifle at targets on an outdoor range.",
+    "category": "Action"
+  },
+  "helicopter_action": {
+    "title": "Over the Lake",
+    "description": "A yellow helicopter flies low over a lake with a red bucket on its line.",
+    "category": "Action"
+  },
+  "autodieb_crime": {
+    "title": "Snatched",
+    "description": "A hand reaches through an open car door and takes a bag from the seat.",
+    "category": "Crime"
+  },
+  "hacker_crime": {
+    "title": "After Hours",
+    "description": "A hooded figure works in the dark in front of screens full of data.",
+    "category": "Crime"
+  },
+  "frau_angst_mystery": {
+    "title": "Something's There",
+    "description": "A woman stares wide-eyed past the camera and gasps in fear.",
+    "category": "Mystery"
+  },
+  "halloween_mystery": {
+    "title": "Pumpkin Night",
+    "description": "Carved pumpkins and candles glow under a full moon while bats circle overhead.",
+    "category": "Mystery"
+  },
+  "mann_fenster_mystery": {
+    "title": "City Below",
+    "description": "A silhouetted man stands at a window high above a glowing city and raises his hand.",
+    "category": "Mystery"
+  },
+  "segelschiff_mstery": {
+    "title": "Ship in the Moonlight",
+    "description": "A lone sailing ship lies on a dark sea while the moon reflects on the water.",
+    "category": "Mystery"
+  },
+  "händchen_romance": {
+    "title": "Hand in Hand",
+    "description": "Two people reach for each other and join hands in the low sun of a quiet street.",
+    "category": "Romance"
+  },
+  "liebeschlösser_romance": {
+    "title": "Love Locks",
+    "description": "Hundreds of padlocks hang from a railing above a beach.",
+    "category": "Romance"
+  },
+  "tee_lagerfeuer_romance": {
+    "title": "Tea by the Fire",
+    "description": "One person pours a hot drink for another beside a campfire at dusk.",
+    "category": "Romance"
+  },
+  "wein_romance": {
+    "title": "A Glass of Wine",
+    "description": "A couple shares wine and a small meal in a cozy wooden cabin.",
+    "category": "Romance"
+  },
+  "golf_sports": {
+    "title": "On the Green",
+    "description": "A golfer putts toward the hole, seen from ground level beside the flagstick.",
+    "category": "Sports"
+  },
+  "seilspringen_sports": {
+    "title": "Skipping Rope",
+    "description": "A woman skips rope in a dim gym.",
+    "category": "Sports"
+  },
+  "tennis_sports": {
+    "title": "Court from Above",
+    "description": "Two players rally on a red clay court, filmed from directly above.",
+    "category": "Sports"
+  },
+  "thailandboat_sports": {
+    "title": "Longboat Race",
+    "description": "Two long crewed boats race down a brown river while a crowd watches from the bank.",
+    "category": "Sports"
+  },
+  "sport": {
+    "title": "Cycling the Avenue",
+    "description": "Three cyclists ride away down a tree-lined path.",
+    "category": "Sports"
+  },
+  "sport_1": {
+    "title": "Pitch from Above",
+    "description": "Players move around the center circle of a green pitch, filmed from directly above.",
+    "category": "Sports"
+  },
+  "sport_2": {
+    "title": "Floodlit Match",
+    "description": "A football pitch glows under floodlights at dusk, seen from the air.",
+    "category": "Sports"
+  },
+  "sport_3": {
+    "title": "Battle Ropes",
+    "description": "A man works out with heavy ropes in a brick-walled gym.",
+    "category": "Sports"
+  },
+  "turtle": {
+    "title": "Sea Turtle",
+    "description": "A sea turtle glides over a rocky seabed in clear blue water.",
+    "category": "Documentary"
+  },
+  "apes": {
+    "title": "Baboon Family",
+    "description": "Baboons huddle together on a log, caring for their young.",
+    "category": "Documentary"
+  },
+  "bird": {
+    "title": "Little Green Bird",
+    "description": "A small green and orange bird sits on a wire and looks around.",
+    "category": "Documentary"
+  },
+  "bird_2": {
+    "title": "Two Cranes",
+    "description": "Two black and white cranes walk through a green forest.",
+    "category": "Documentary"
+  },
+  "building": {
+    "title": "Town from Above",
+    "description": "A drone flies over a town with a long curved building beside a busy road.",
+    "category": "Documentary"
+  },
+  "cruiseship": {
+    "title": "Cruise Ship",
+    "description": "A large cruise ship crosses a calm bay while small boats pass.",
+    "category": "Documentary"
+  },
+  "dandelion": {
+    "title": "Dandelion in Bloom",
+    "description": "Two dandelion heads open in time-lapse against a black background.",
+    "category": "Documentary"
+  },
+  "finance": {
+    "title": "Market Data",
+    "description": "Stock prices scroll across a dark screen in green and red.",
+    "category": "Documentary"
+  },
+  "finance_2": {
+    "title": "Bitcoin Circuit",
+    "description": "A glowing Bitcoin symbol sits inside rings of digital light.",
+    "category": "Documentary"
+  },
+  "finance_3": {
+    "title": "Counting Cash",
+    "description": "A man counts a handful of dollar bills in front of a bright window.",
+    "category": "Documentary"
+  },
+  "fireplace": {
+    "title": "Fireside Room",
+    "description": "A fire burns in a cozy book-lined room with round windows over a city.",
+    "category": "Documentary"
+  },
+  "greenlandscape": {
+    "title": "Mist in the Hills",
+    "description": "Mist rolls across a green hillside with a wooden house and tall pines.",
+    "category": "Documentary"
+  },
+  "people": {
+    "title": "Study Group",
+    "description": "A group of young people sits on the grass around a laptop and talks.",
+    "category": "Documentary"
+  },
+  "rocketlaunch": {
+    "title": "On the Launch Pad",
+    "description": "A rocket stands on its launch pad under a blue sky.",
+    "category": "Documentary"
+  },
+  "seagulls": {
+    "title": "Gulls at Sunset",
+    "description": "A flock of gulls flies across the sun as it sets over the sea.",
+    "category": "Documentary"
+  },
+  "seaview": {
+    "title": "Turquoise Bay",
+    "description": "A white sailboat lies at anchor in a turquoise bay.",
+    "category": "Documentary"
+  },
+  "skyscraper": {
+    "title": "Towers at Dusk",
+    "description": "Glass towers rise over a city at dusk.",
+    "category": "Documentary"
+  },
+  "traffic": {
+    "title": "Night Traffic",
+    "description": "Cars pass on an elevated road between high-rises at night.",
+    "category": "Documentary"
+  },
+  "traffic_2": {
+    "title": "Busy Boulevard",
+    "description": "Time-lapse of traffic on a wide city street under a blue sky.",
+    "category": "Documentary"
+  },
+  "waterfall": {
+    "title": "Jungle Waterfall",
+    "description": "A waterfall drops into a green, forested valley.",
+    "category": "Documentary"
+  },
+  "wolf": {
+    "title": "Wolf",
+    "description": "A wolf turns and looks straight into the camera.",
+    "category": "Documentary"
+  },
+  "sport_4": {
+    "title": "Putting Practice",
+    "description": "A golfer lines up and plays a putt on a sunny course, filmed from behind the hole.",
+    "category": "Sports"
+  }
+}

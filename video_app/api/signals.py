@@ -4,12 +4,13 @@ Signals for automatic video processing and cleanup on save/delete.
 
 import logging
 import os
+import posixpath
 import shutil
 from django.core.cache import cache
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 from django.core.files.storage import default_storage
-from video_app.models import Video
+from video_app.models import Video, VideoResolution
 from .tasks import convert_video, create_thumbnail
 from .utils import STANDARD_VIDEOS_CACHE_KEY
 import django_rq
@@ -64,10 +65,24 @@ def _delete_all_hls_and_collect_dirs(instance):
         if res.converted_file:
             hls_dir = os.path.dirname(res.converted_file.path)
             video_dirs.add(os.path.dirname(hls_dir))
-            if os.path.exists(hls_dir):
+            if _folder_used_by_other_video(res, instance):
+                logger.info("HLS folder of video %s (%s) is shared, kept.", instance.pk, res.resolution)
+            elif os.path.exists(hls_dir):
                 shutil.rmtree(hls_dir, ignore_errors=True)
                 logger.info("HLS folder of video %s (%s) deleted.", instance.pk, res.resolution)
     return video_dirs
+
+
+def _folder_used_by_other_video(res, instance):
+    """
+    Older videos were converted into a folder named after the file; equal names share one.
+    """
+    folder = posixpath.dirname(res.converted_file.name)
+    return (
+        VideoResolution.objects.filter(converted_file__startswith=f"{folder}/")
+        .exclude(original_video=instance)
+        .exists()
+    )
 
 
 def _delete_empty_video_dirs(video_dirs):

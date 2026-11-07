@@ -63,10 +63,16 @@ def _run_thumbnail_command(input_path, output_path, video_instance, output_filen
         return
     with open(output_path, "rb") as f:
         video_instance.thumbnail_url.save(
-            output_filename, ContentFile(f.read()), save=True
+            output_filename, ContentFile(f.read()), save=False
         )
+    # update() instead of save(): a video deleted meanwhile must not be inserted again.
+    saved = Video.objects.filter(pk=video_instance.pk).update(
+        thumbnail_url=video_instance.thumbnail_url.name
+    )
+    if not saved:
+        video_instance.thumbnail_url.delete(save=False)
+        return
     logger.info("Thumbnail created for video %s.", video_instance.pk)
-    video_instance.save()
 
 
 def _create_thumbnail_file(input_path, output_path, video_instance):
@@ -116,7 +122,8 @@ def convert_video(video_id):
         set_video_failed(video_instance)
         return
 
-    output_base_dir = os.path.join(settings.MEDIA_ROOT, "hls", base_name)
+    # One folder per video: equal file names must never share or overwrite streams.
+    output_base_dir = os.path.join(settings.MEDIA_ROOT, "hls", str(video_instance.pk))
     os.makedirs(output_base_dir, exist_ok=True)
     if _convert_to_all_resolutions(video_instance, input_file, base_name, output_base_dir):
         _delete_original_video(video_instance)
@@ -198,7 +205,7 @@ def set_video_failed(video_instance):
     """
     video_instance.status = "failed"
     video_instance.conversion_progress = 0
-    video_instance.save()
+    Video.objects.filter(pk=video_instance.pk).update(status="failed", conversion_progress=0)
 
 
 def update_video_progress(video_instance, done, total, current_res):
@@ -208,7 +215,12 @@ def update_video_progress(video_instance, done, total, current_res):
     video_instance.conversion_progress = int((done / total) * 100)
     video_instance.current_resolution = current_res
     video_instance.status = "ready"
-    video_instance.save()
+    # update() instead of save(): a video deleted meanwhile must not be inserted again.
+    Video.objects.filter(pk=video_instance.pk).update(
+        conversion_progress=video_instance.conversion_progress,
+        current_resolution=current_res,
+        status="ready",
+    )
 
 
 def update_video_cache():

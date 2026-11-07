@@ -4,6 +4,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import unicodedata
+from pathlib import Path
 from io import StringIO
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.core.cache import cache
@@ -1311,6 +1313,167 @@ class DemoCleanupTests(APITestCase):
         self.assertFalse(os.path.exists(path))
 
 
+class HlsFolderTests(APITestCase):
+    """
+    Every video converts into its own folder, so equal file names never share streams (X1 findings 1 and 4).
+    """
+
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        queue = patch("video_app.api.signals.django_rq.get_queue")
+        self.queue = queue.start()
+        self.addCleanup(queue.stop)
+
+    def _write(self, relative_path, content):
+        path = os.path.join(self.media, relative_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(content)
+        return relative_path
+
+    def _fake_ffmpeg(self, command, check=True):
+        """
+        Stands in for ffmpeg only: writes a playlist and a segment holding the bytes of the input.
+        """
+        with open(command[command.index("-i") + 1], "rb") as f:
+            content = f.read()
+        out_dir = os.path.dirname(command[-1])
+        with open(os.path.join(out_dir, "index.m3u8"), "wb") as f:
+            f.write(b"#EXTM3U")
+        with open(os.path.join(out_dir, "index000.ts"), "wb") as f:
+            f.write(content)
+
+    def _convert(self, title, content):
+        video = Video.objects.create(
+            title=title, description="d", category="Comedy",
+            video_file=self._write("videos/clip.mp4", content),
+        )
+        with patch("video_app.api.tasks.subprocess.run", side_effect=self._fake_ffmpeg):
+            convert_video(video.id)
+        return video
+
+    def _segment(self, video, resolution="720p"):
+        res = video.resolutions.get(resolution=resolution)
+        with open(os.path.join(os.path.dirname(res.converted_file.path), "index000.ts"), "rb") as f:
+            return f.read()
+
+    def test_equal_file_names_get_separate_folders_and_keep_their_own_streams(self):
+        first = self._convert("First", b"FIRST")
+        # The original is gone after conversion, so the next upload can have the same name.
+        self.assertFalse(Video.objects.get(pk=first.pk).video_file)
+        second = self._convert("Second", b"SECOND")
+        folders = {
+            os.path.dirname(r.converted_file.name)
+            for video in (first, second)
+            for r in video.resolutions.all()
+        }
+        self.assertEqual(len(folders), 6)
+        self.assertEqual(self._segment(first), b"FIRST")
+        self.assertEqual(self._segment(second), b"SECOND")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.media, "hls"))), sorted([str(first.pk), str(second.pk)]))
+
+    def test_deleting_one_video_keeps_the_stream_of_the_other(self):
+        first = self._convert("First", b"FIRST")
+        second = self._convert("Second", b"SECOND")
+        first.delete()
+        self.assertEqual(self._segment(second), b"SECOND")
+        self.assertFalse(os.path.exists(os.path.join(self.media, "hls", str(first.pk))))
+
+    def _old_layout_video(self, title, folder="hls/videos/shared/480p"):
+        self._write(f"{folder}/index.m3u8", b"#EXTM3U")
+        video = Video.objects.create(title=title, description="d", category="Comedy")
+        VideoResolution.objects.create(
+            original_video=video, resolution="480p", converted_file=f"{folder}/index.m3u8"
+        )
+        return video
+
+    def test_shared_old_layout_folder_is_deleted_only_with_its_last_video(self):
+        folder = os.path.join(self.media, "hls", "videos", "shared", "480p")
+        first = self._old_layout_video("First")
+        second = self._old_layout_video("Second")
+        first.delete()
+        self.assertTrue(os.path.exists(os.path.join(folder, "index.m3u8")))
+        second.delete()
+        self.assertFalse(os.path.exists(folder))
+
+    def test_old_layout_folder_of_a_single_video_is_still_deleted(self):
+        video = self._old_layout_video("Only", folder="hls/videos/alone/480p")
+        video.delete()
+        self.assertFalse(os.path.exists(os.path.join(self.media, "hls", "videos", "alone", "480p")))
+
+
+class StaleVideoWriteTests(APITestCase):
+    """
+    A job holding an old instance must not bring a deleted video back (X1 finding 3).
+    """
+
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        queue = patch("video_app.api.signals.django_rq.get_queue")
+        self.queue = queue.start()
+        self.addCleanup(queue.stop)
+        self.video = Video.objects.create(title="Stale", description="d", category="Comedy")
+        self.queue.reset_mock()
+
+    def _assert_stays_deleted(self):
+        self.assertFalse(Video.objects.filter(title="Stale").exists())
+        self.queue.return_value.enqueue.assert_not_called()
+
+    def test_progress_write_after_delete_does_not_recreate_the_video(self):
+        stale = Video.objects.get(pk=self.video.pk)
+        self.video.delete()
+        tasks.update_video_progress(stale, 1, 3, "480p")
+        self._assert_stays_deleted()
+
+    def test_failed_write_after_delete_does_not_recreate_the_video(self):
+        stale = Video.objects.get(pk=self.video.pk)
+        self.video.delete()
+        tasks.set_video_failed(stale)
+        self._assert_stays_deleted()
+
+    def test_thumbnail_write_after_delete_does_not_recreate_the_video_or_keep_the_file(self):
+        stale = Video.objects.get(pk=self.video.pk)
+        self.video.delete()
+        output = os.path.join(self.media, "stale_thumbnail.jpg")
+        with open(output, "wb") as f:
+            f.write(b"img")
+        with patch("video_app.api.tasks.subprocess.run"):
+            tasks._run_thumbnail_command("in.mp4", output, stale, "stale_thumbnail.jpg")
+        self._assert_stays_deleted()
+        self.assertEqual(os.listdir(os.path.join(self.media, "thumbnails")) if os.path.isdir(os.path.join(self.media, "thumbnails")) else [], [])
+
+    def test_writes_for_a_live_video_still_land_in_the_row(self):
+        stale = Video.objects.get(pk=self.video.pk)
+        tasks.update_video_progress(stale, 1, 3, "480p")
+        row = Video.objects.get(pk=self.video.pk)
+        self.assertEqual((row.status, row.conversion_progress, row.current_resolution), ("ready", 33, "480p"))
+        tasks.set_video_failed(stale)
+        row.refresh_from_db()
+        self.assertEqual((row.status, row.conversion_progress), ("failed", 0))
+        self.queue.return_value.enqueue.assert_not_called()
+
+    def test_thumbnail_of_a_live_video_is_saved_to_the_row(self):
+        output = os.path.join(self.media, "stale_thumbnail.jpg")
+        with open(output, "wb") as f:
+            f.write(b"img")
+        with patch("video_app.api.tasks.subprocess.run"):
+            tasks._run_thumbnail_command("in.mp4", output, self.video, "stale_thumbnail.jpg")
+        row = Video.objects.get(pk=self.video.pk)
+        self.assertTrue(row.thumbnail_url.name.startswith("thumbnails/"))
+        self.assertTrue(os.path.exists(os.path.join(self.media, row.thumbnail_url.name)))
+
+
+CATALOG_LOADER = "video_app.management.commands.import_catalog.load_catalog"
+
+
 class ImportCatalogCommandTests(APITestCase):
     """
     VFX-62: fill the standard catalog from a folder of sample clips on the server.
@@ -1333,6 +1496,14 @@ class ImportCatalogCommandTests(APITestCase):
         self.addCleanup(media_settings.disable)
         cache.delete(STANDARD_VIDEOS_CACHE_KEY)
         self.addCleanup(cache.delete, STANDARD_VIDEOS_CACHE_KEY)
+        self.catalog = {
+            "golf_sports": {"title": "Golf", "description": "Golf on a green.", "category": "Sports"},
+            "segelschiff_mstery": {"title": "Segelschiff", "description": "A ship.", "category": "Mystery"},
+            "bird_2": {"title": "Bird 2", "description": "A bird.", "category": "Documentary"},
+        }
+        catalog = patch(CATALOG_LOADER, side_effect=lambda: self.catalog)
+        catalog.start()
+        self.addCleanup(catalog.stop)
 
     def _import(self, *args, stderr=None):
         out = StringIO()
@@ -1387,17 +1558,16 @@ class ImportCatalogCommandTests(APITestCase):
         self.assertIn("0 imported, 3 skipped", output)
 
     def test_uses_title_description_and_category_from_catalog(self):
-        catalog = {"segelschiff_mstery": {"title": "Sailing Ship", "description": "A ship at sea.", "category": "Crime"}}
-        with patch("video_app.management.commands.import_catalog.load_catalog", return_value=catalog):
-            self._import()
+        self.catalog["segelschiff_mstery"] = {"title": "Sailing Ship", "description": "A ship at sea.", "category": "Crime"}
+        self._import()
         video = Video.objects.get(title="Sailing Ship")
         self.assertEqual(video.description, "A ship at sea.")
         self.assertEqual(video.category, "Crime")
 
     def test_unknown_file_falls_back_to_file_name_and_warns(self):
         stderr = StringIO()
-        with patch("video_app.management.commands.import_catalog.load_catalog", return_value={}):
-            self._import(stderr=stderr)
+        self.catalog.clear()
+        self._import(stderr=stderr)
         video = Video.objects.get(title="Golf")
         self.assertEqual(video.category, "Sports")
         self.assertEqual(video.description, "Sample clip from the Videoflix demo catalog.")
@@ -1417,6 +1587,8 @@ class ImportCatalogCommandTests(APITestCase):
             self.assertIn(entry["category"], categories, name)
         descriptions = [entry["description"] for entry in catalog.values()]
         self.assertEqual(len(descriptions), len(set(descriptions)))
+        titles = [entry["title"] for entry in catalog.values()]
+        self.assertEqual(len(titles), len(set(titles)))
 
     def test_replace_deletes_standard_videos_and_their_files(self):
         old = self._stored_standard_video()
@@ -1453,13 +1625,82 @@ class ImportCatalogCommandTests(APITestCase):
         self.assertTrue(Video.objects.filter(pk=old.pk).exists())
         self.assertTrue(all(os.path.exists(path) for path in self._stored_files(old)))
 
-    def test_replace_refuses_a_folder_that_holds_the_stored_files(self):
+    def test_folder_inside_media_root_is_refused_and_deletes_nothing(self):
         old = self._stored_standard_video()
-        stored_dir = os.path.dirname(os.path.join(self.media, old.video_file.name))
-        with self.assertRaises(CommandError):
-            call_command("import_catalog", stored_dir, "--replace", stdout=StringIO())
-        self.assertTrue(Video.objects.filter(pk=old.pk).exists())
+        private = os.path.join(self.media, "videos", "private.mp4")
+        with open(private, "wb") as f:
+            f.write(b"private upload")
+        for folder in (self.media, os.path.join(self.media, "videos")):
+            for args in ((), ("--replace",)):
+                with self.assertRaises(CommandError):
+                    call_command("import_catalog", folder, *args, stdout=StringIO())
+        self.assertEqual(Video.objects.count(), 1)
         self.assertTrue(all(os.path.exists(path) for path in self._stored_files(old)))
+
+    def _assert_replace_aborts(self):
+        old = self._stored_standard_video()
+        with self.assertRaises(CommandError):
+            self._import("--replace")
+        self.assertEqual(list(Video.objects.values_list("pk", flat=True)), [old.pk])
+        self.assertTrue(all(os.path.exists(path) for path in self._stored_files(old)))
+
+    def test_replace_aborts_before_deleting_when_a_clip_has_no_catalog_entry(self):
+        del self.catalog["bird_2"]
+        self._assert_replace_aborts()
+
+    def test_replace_aborts_before_deleting_when_a_catalog_entry_has_no_clip(self):
+        self.catalog["missing_clip"] = {"title": "Missing", "description": "No file.", "category": "Crime"}
+        self._assert_replace_aborts()
+
+    def test_replace_aborts_before_deleting_when_entry_fields_are_missing(self):
+        del self.catalog["bird_2"]["description"]
+        self._assert_replace_aborts()
+
+    def test_replace_aborts_before_deleting_when_the_category_is_invalid(self):
+        self.catalog["bird_2"]["category"] = "Western"
+        self._assert_replace_aborts()
+
+    def test_replace_aborts_before_deleting_when_a_title_is_duplicated(self):
+        self.catalog["bird_2"]["title"] = "Golf"
+        self._assert_replace_aborts()
+
+    def test_replace_aborts_before_deleting_when_a_clip_is_unreadable(self):
+        real_open = Path.open
+
+        def open_unless_golf(path, *args, **kwargs):
+            if path.name == "golf_sports.mp4":
+                raise PermissionError("denied")
+            return real_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", open_unless_golf):
+            self._assert_replace_aborts()
+
+    def test_replace_aborts_before_deleting_when_the_catalog_file_is_broken(self):
+        old = self._stored_standard_video()
+        with patch(CATALOG_LOADER, side_effect=ValueError("bad json")):
+            with self.assertRaises(CommandError):
+                self._import("--replace")
+        self.assertTrue(Video.objects.filter(pk=old.pk).exists())
+
+    def test_without_replace_an_unknown_clip_still_imports_with_a_warning(self):
+        del self.catalog["bird_2"]
+        stderr = StringIO()
+        self._import(stderr=stderr)
+        self.assertEqual(Video.objects.count(), 3)
+        self.assertIn("bird_2", stderr.getvalue())
+
+    def test_catalog_lookup_ignores_unicode_normalization_and_finds_subfolders(self):
+        folder = os.path.join(self.source, "videos für projekt")
+        os.makedirs(folder)
+        nfd = unicodedata.normalize("NFD", "händchen_romance.mp4")
+        self.assertNotEqual(nfd, unicodedata.normalize("NFC", nfd))
+        with open(os.path.join(folder, nfd), "wb") as f:
+            f.write(b"fake video")
+        self.catalog["händchen_romance"] = {"title": "Hands", "description": "Two hands.", "category": "Romance"}
+        stderr = StringIO()
+        self._import("--replace", stderr=stderr)
+        self.assertEqual(Video.objects.get(title="Hands").category, "Romance")
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_import_leaves_source_files_in_place(self):
         self._import("--replace")

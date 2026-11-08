@@ -65,8 +65,9 @@ class ActivateAccountView(views.APIView):
     def get(self, request, uid, token):
         try:
             uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
+            # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
             user = CustomUser.objects.get(
-                pk=uid_decoded, activation_code=token, is_active=False
+                pk=uid_decoded, activation_code=token, is_active=False, is_soft_deleted=False
             )
             if (
                 not user.activation_code_expiry
@@ -185,7 +186,10 @@ class CustomLoginCookieRefreshView(views.APIView):
         try:
             refresh = RefreshToken(refresh_token)
             # The token stays valid after deactivation, so the account is checked here (VFX-53).
-            if not CustomUser.objects.filter(pk=refresh["user_id"], is_active=True).exists():
+            # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
+            if not CustomUser.objects.filter(
+                pk=refresh["user_id"], is_active=True, is_soft_deleted=False
+            ).exists():
                 return Response(
                     {"detail": "Invalid or expired refresh token."},
                     status=status.HTTP_401_UNAUTHORIZED,
@@ -218,19 +222,16 @@ class RequestNewActivationLinkView(views.APIView):
 
     def post(self, request):
         email = request.data.get("email")
-        try:
-            user = CustomUser.objects.get(email=email, is_active=False)
-            if (
-                not user.activation_code_expiry
-                or timezone.now() > user.activation_code_expiry
-            ):
-                user.activation_code, user.activation_code_expiry = (
-                    generate_activation_code()
-                )
-                user.save()
-                queue_activation_email(user)
-        except CustomUser.DoesNotExist:
-            pass
+        user = CustomUser.objects.find_by_email(email, is_active=False)
+        if user and (
+            not user.activation_code_expiry
+            or timezone.now() > user.activation_code_expiry
+        ):
+            user.activation_code, user.activation_code_expiry = (
+                generate_activation_code()
+            )
+            user.save()
+            queue_activation_email(user)
         return Response(
             {
                 "detail": "If an inactive account with this email exists, a new activation link has been sent."
@@ -252,15 +253,13 @@ class PasswordResetRequestView(views.APIView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data["email"]
-            try:
-                user = CustomUser.objects.get(email=email, is_active=True)
+            user = CustomUser.objects.find_by_email(email, is_active=True)
+            if user:
                 user.activation_code, user.activation_code_expiry = (
                     generate_activation_code()
                 )
                 user.save()
                 queue_password_reset_email(user)
-            except CustomUser.DoesNotExist:
-                pass
             return Response(
                 {
                     "detail": "If an account with this email exists, a reset link has been sent."
@@ -280,8 +279,9 @@ class PasswordResetConfirmView(views.APIView):
     def post(self, request, uid, token):
         try:
             uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
+            # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
             user = CustomUser.objects.get(
-                pk=uid_decoded, activation_code=token, is_active=True
+                pk=uid_decoded, activation_code=token, is_active=True, is_soft_deleted=False
             )
             if (
                 not user.activation_code_expiry
@@ -309,28 +309,28 @@ class PasswordResetConfirmView(views.APIView):
             )
 
 
-class SoftDeleteAccountView(views.APIView):
+class DeleteAccountView(views.APIView):
     """
-    API view for soft-deleting (deactivating) the authenticated user's account.
+    Immediately and permanently delete the authenticated user's account with all uploads and
+    their files. This cannot be undone. Requires a JSON body with the boolean "confirm": true
+    (a string such as "true" or a form value does not count) and clears the auth cookies.
     """
 
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
-        user = request.user
-        confirm = request.data.get("confirm", False)
-        if not confirm:
+        # Only the JSON boolean counts; a text like "false" is truthy and would delete for good.
+        if request.data.get("confirm") is not True:
             return Response(
                 {"detail": "Please confirm account deletion."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        user.is_active = False
-        user.is_soft_deleted = True
-        user.save()
-        return Response(
-            {"detail": "Account has been deactivated (soft delete)."},
-            status=status.HTTP_204_NO_CONTENT,
-        )
+        # CASCADE removes the rows, the video pre_delete signal removes the files.
+        request.user.delete()
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie("access_token", path="/", samesite="Strict")
+        response.delete_cookie("refresh_token", path="/", samesite="Strict")
+        return response
 
 
 class HardDeleteAccountView(views.APIView):
@@ -351,29 +351,6 @@ class HardDeleteAccountView(views.APIView):
         except CustomUser.DoesNotExist:
             return Response(
                 {"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND
-            )
-
-
-class RestoreAccountView(views.APIView):
-    """
-    API view for admin to restore a deleted a user account.
-    """
-
-    permission_classes = [IsAdminUser]
-
-    def post(self, request, pk):
-        try:
-            user = CustomUser.objects.get(pk=pk, is_soft_deleted=True)
-            user.is_active = True
-            user.is_soft_deleted = False
-            user.save()
-            return Response(
-                {"detail": "Account has been restored."}, status=status.HTTP_200_OK
-            )
-        except CustomUser.DoesNotExist:
-            return Response(
-                {"detail": "User not found or not deleted."},
-                status=status.HTTP_404_NOT_FOUND,
             )
 
 

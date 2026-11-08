@@ -34,12 +34,16 @@ PLAIN_STATIC_STORAGES = {
 MP4_FORMAT = "mov,mp4,m4a,3gp,3g2,mj2"
 
 
-def ffprobe_output(format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0):
+def ffprobe_output(
+    format_name=MP4_FORMAT, duration="30.0", has_video=True, returncode=0, width=1920, height=1080,
+    avg_frame_rate="30/1",
+):
     """
     Fake result of the ffprobe process; tests replace only the process call.
     """
+    video_stream = {"codec_type": "video", "width": width, "height": height, "avg_frame_rate": avg_frame_rate}
     data = {
-        "streams": [{"codec_type": "video"}] if has_video else [],
+        "streams": [video_stream] if has_video else [],
         "format": {"format_name": format_name, "duration": duration},
     }
     return subprocess.CompletedProcess(
@@ -75,6 +79,54 @@ class HlsCommandTests(SimpleTestCase):
         limited = list(cmd)
         del limited[cmd.index("-t") : cmd.index("-t") + 2]
         self.assertEqual(limited, plain)
+
+
+class FfmpegOutputTests(APITestCase):
+    """
+    ffmpeg prints file names and metadata (titles, GPS) to stderr, which goes straight to the
+    host journal. Its output is discarded; logs carry only the exit code and IDs (X5 finding 1).
+    """
+
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        queue = patch("video_app.api.signals.django_rq.get_queue")
+        queue.start()
+        self.addCleanup(queue.stop)
+        self.video = Video.objects.create(
+            title="Private Holiday", description="d", category="Comedy",
+            video_file="videos/max_mustermann.mp4",
+        )
+
+    def _assert_output_discarded(self, mock_run):
+        self.assertTrue(mock_run.called)
+        for call in mock_run.call_args_list:
+            self.assertEqual(call.kwargs["stdout"], subprocess.DEVNULL)
+            self.assertEqual(call.kwargs["stderr"], subprocess.DEVNULL)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_conversion_discards_ffmpeg_output(self, mock_run):
+        convert_video(self.video.pk)
+        self._assert_output_discarded(mock_run)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_thumbnail_discards_ffmpeg_output(self, mock_run):
+        tasks.create_thumbnail(self.video.pk)
+        self._assert_output_discarded(mock_run)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_failed_conversion_logs_exit_code_and_id_only(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(69, ["ffmpeg", "videos/max_mustermann.mp4"])
+        with self.assertLogs("video_app.api.tasks", level="ERROR") as logs:
+            convert_video(self.video.pk)
+        output = " ".join(logs.output)
+        self.assertIn("69", output)
+        self.assertIn(str(self.video.pk), output)
+        self.assertNotIn("mustermann", output)
+        self.assertNotIn("Private Holiday", output)
 
 
 class VideoAppIntegrationTests(APITestCase):
@@ -425,6 +477,37 @@ class VideoAppIntegrationTests(APITestCase):
             position = cmd.index("-protocol_whitelist")
             self.assertEqual(cmd[position + 1], "file")
             self.assertLess(position, cmd.index("input"))
+
+    def test_ffmpeg_commands_refuse_frames_over_the_pixel_limit(self):
+        # X5 finding 4: a small crafted file must not claim many GB of memory while decoding.
+        commands = [
+            utils.get_ffmpeg_thumbnail_command("input", "output"),
+            utils.get_ffmpeg_hls_command("input", "output", "base", 720)[0],
+            utils.get_ffprobe_command("input"),
+        ]
+        for cmd in commands:
+            position = cmd.index("-max_pixels")
+            # Decoders round the width up to 64: a 2160 wide portrait 4K frame needs 2176 x 3840.
+            self.assertEqual(cmd[position + 1], str(2176 * 3840))
+            # An input option only works in front of the input.
+            self.assertLess(position, cmd.index("input"))
+
+    def test_ffprobe_reads_the_frame_size(self):
+        cmd = utils.get_ffprobe_command("input")
+        entries = cmd[cmd.index("-show_entries") + 1]
+        self.assertIn("width", entries)
+        self.assertIn("height", entries)
+
+    def test_ffprobe_reads_the_frame_rate(self):
+        cmd = utils.get_ffprobe_command("input")
+        self.assertIn("avg_frame_rate", cmd[cmd.index("-show_entries") + 1])
+
+    def test_hls_output_is_capped_at_60_fps(self):
+        # X5 finding 5: the file header can lie about the frame rate, so the output is capped too.
+        cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "base", 720)
+        self.assertEqual(cmd[cmd.index("-fpsmax") + 1], "60")
+        # An output option, so it goes after the input.
+        self.assertGreater(cmd.index("-fpsmax"), cmd.index("input"))
 
     def test_get_ffmpeg_hls_command(self):
         cmd, _ = utils.get_ffmpeg_hls_command("input", "output", "height", 720)
@@ -854,11 +937,11 @@ class VideoOwnershipTests(APITestCase):
             self.assertFalse(os.path.exists(file_path))
             self.assertTrue(Video.objects.filter(pk=self.standard.pk).exists())
 
-    def test_soft_delete_keeps_uploads_for_admin(self):
+    def test_deleting_the_own_account_removes_the_uploads(self):
         response = self.alice_client.delete("/api/delete-account/", {"confirm": True}, format="json")
         self.assertEqual(response.status_code, 204)
         response = self.admin_client.get(f"/api/video/{self.alice_video.pk}/")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 404)
 
     # --- ADMIN ENDPOINTS ---
     def test_member_cannot_clear_cache(self):
@@ -970,6 +1053,67 @@ class UploadValidationTests(APITestCase):
         response = self._upload()
         self.assertEqual(response.status_code, 400)
         self.assertIn("video_file", response.data)
+
+    # --- FRAME SIZE ---
+    def test_video_up_to_4k_in_either_orientation_is_accepted(self):
+        for width, height in [(3840, 2160), (2160, 3840), (3840, 1000), (1000, 3840)]:
+            with self.subTest(width=width, height=height):
+                Video.objects.filter(owner=self.member).delete()
+                self.mock_run.return_value = ffprobe_output(width=width, height=height)
+                self.assertEqual(self._upload().status_code, 201)
+
+    def test_accepted_sizes_fit_the_decoder_limit(self):
+        # A real run failed on 2160x3840: the decoder checks -max_pixels with the width rounded up to 64.
+        cmd = utils.get_ffmpeg_hls_command("input", "output", "base", 480)[0]
+        decoder_limit = int(cmd[cmd.index("-max_pixels") + 1])
+        for width, height in [(3840, 2160), (2160, 3840)]:
+            with self.subTest(width=width, height=height):
+                aligned_width = -(-width // 64) * 64
+                self.assertLessEqual(aligned_width * height, decoder_limit)
+
+    def test_video_over_the_4k_box_is_rejected(self):
+        # 3600x2300 and 2304x3840 have fewer pixels than 4K but do not fit 3840x2160 in either orientation.
+        for width, height in [(3841, 2160), (2160, 3841), (3840, 2161), (3600, 2300), (2304, 3840), (4000, 2000)]:
+            with self.subTest(width=width, height=height):
+                self.mock_run.return_value = ffprobe_output(width=width, height=height)
+                response = self._upload()
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["video_file"],
+                    ["The video resolution must not be larger than 3840x2160 (or 2160x3840 in portrait)."],
+                )
+                self.assertFalse(Video.objects.filter(title="Clip").exists())
+
+    def test_video_without_a_known_frame_size_is_rejected(self):
+        # Over -max_pixels ffprobe exits 0 and reports a PNG-in-MOV stream as 0x0 (real run).
+        self.mock_run.return_value = ffprobe_output(width=0, height=0)
+        response = self._upload()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("resolution", str(response.data["video_file"]))
+
+    # --- FRAME RATE ---
+    def test_video_of_up_to_120_fps_is_accepted(self):
+        for rate in ["120/1", "30000/1001"]:
+            with self.subTest(rate=rate):
+                Video.objects.filter(owner=self.member).delete()
+                self.mock_run.return_value = ffprobe_output(avg_frame_rate=rate)
+                self.assertEqual(self._upload().status_code, 201)
+
+    def test_video_over_120_fps_is_rejected(self):
+        for rate in ["121/1", "120001/1000", "1000/1"]:
+            with self.subTest(rate=rate):
+                self.mock_run.return_value = ffprobe_output(avg_frame_rate=rate)
+                response = self._upload()
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("frames per second", str(response.data["video_file"]))
+
+    def test_unknown_frame_rate_does_not_break_the_check(self):
+        # Not rejected: -fpsmax and the conversion timeout still limit such a file in the worker.
+        for rate in ["0/0", "1/0", "", "abc", "30/x", None]:
+            with self.subTest(rate=rate):
+                Video.objects.filter(owner=self.member).delete()
+                self.mock_run.return_value = ffprobe_output(avg_frame_rate=rate)
+                self.assertEqual(self._upload().status_code, 201)
 
     def test_ffprobe_reads_the_uploaded_file_and_temp_copy_is_removed(self):
         self._upload()
@@ -1234,6 +1378,58 @@ class MediaProtectionTests(APITestCase):
         for cmd in commands:
             self.assertNotIn("-t", cmd)
 
+    # --- CONVERSION TIME ---
+    def _owned_video(self, name="limited"):
+        return Video.objects.create(
+            title="Timed", description="d", category="Comedy", owner=self.alice,
+            video_file=self._write(f"videos/{name}.mp4", b"ORIGINAL"),
+        )
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_owned_video_has_a_time_limit_per_resolution(self, mock_run):
+        convert_video(self._owned_video().id)
+        self.assertEqual([call.kwargs["timeout"] for call in mock_run.call_args_list], [300, 300, 300])
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_standard_video_has_no_time_limit(self, mock_run):
+        video = Video.objects.create(
+            title="Catalog", description="d", category="Comedy",
+            video_file=self._write("videos/catalog.mp4", b"ORIGINAL"),
+        )
+        convert_video(video.id)
+        self.assertEqual([call.kwargs.get("timeout") for call in mock_run.call_args_list], [None, None, None])
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_timeout_fails_the_video_and_stops_the_conversion(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(["ffmpeg"], 300)
+        video = self._owned_video("timeout")
+        convert_video(video.id)
+        self.assertEqual(mock_run.call_count, 1)
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
+        self.assertEqual(video.resolutions.count(), 0)
+        self.assertEqual(video.video_file.name, "videos/timeout.mp4")
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_owned_video_stops_after_the_first_failed_resolution(self, mock_run):
+        mock_run.side_effect = [MagicMock(), subprocess.CalledProcessError(1, ["ffmpeg"])]
+        video = self._owned_video("second")
+        convert_video(video.id)
+        self.assertEqual(mock_run.call_count, 2)
+        video.refresh_from_db()
+        self.assertEqual(video.status, "failed")
+        self.assertEqual(video.resolutions.count(), 1)
+
+    @patch("video_app.api.tasks.subprocess.run")
+    def test_standard_video_still_tries_every_resolution(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(1, ["ffmpeg"])
+        video = Video.objects.create(
+            title="Catalog", description="d", category="Comedy",
+            video_file=self._write("videos/catalog.mp4", b"ORIGINAL"),
+        )
+        convert_video(video.id)
+        self.assertEqual(mock_run.call_count, 3)
+
     # --- HLS FOLDER CLEANUP ---
     def test_deleting_a_video_removes_its_folder_even_without_resolution_rows(self):
         # A stopped conversion leaves segments but no row; the folder belongs to this video alone.
@@ -1395,7 +1591,7 @@ class HlsFolderTests(APITestCase):
             f.write(content)
         return relative_path
 
-    def _fake_ffmpeg(self, command, check=True):
+    def _fake_ffmpeg(self, command, **kwargs):
         """
         Stands in for ffmpeg only: writes a playlist and a segment holding the bytes of the input.
         """

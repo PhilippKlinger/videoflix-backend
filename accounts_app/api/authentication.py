@@ -30,6 +30,9 @@ class JWTAuthenticationFromCookie(JWTAuthentication):
         Reject demo accounts after their lifetime, even before the cleanup ran (VFX-28).
         """
         user = super().get_user(validated_token)
+        # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
+        if user.is_soft_deleted:
+            raise exceptions.AuthenticationFailed("User not found", code="user_not_found")
         if user.is_expired_demo:
             raise exceptions.AuthenticationFailed("Demo has expired.", code="demo_expired")
         return user

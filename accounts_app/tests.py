@@ -1,4 +1,8 @@
 import base64
+import os
+import shutil
+import tempfile
+import time
 from datetime import timedelta
 from io import StringIO
 from unittest.mock import patch
@@ -17,6 +21,8 @@ from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase
 from accounts_app.api.tasks import deliver_activation_email, deliver_password_reset_email
 from accounts_app.api.utils import is_admin
+from core.admin_login import AdminLoginThrottle
+from video_app.models import Video, VideoProgress, VideoResolution
 
 
 def run_mail_jobs_inline(test_case):
@@ -66,13 +72,12 @@ class AccountsIntegrationTests(APITestCase):
             is_active=False,
         )
 
-        # Create soft-deleted user
-        self.deleted_user = CustomUser.objects.create_user(
-            username="deleted",
-            email="deleted@test.de",
-            password="Deleted123!",
-            is_active=False,
-            is_soft_deleted=True,
+        # Create a user for the admin to delete
+        self.target_user = CustomUser.objects.create_user(
+            username="target",
+            email="target@test.de",
+            password="Target123!",
+            is_active=True,
         )
 
     def authenticate_with_cookies(self, email, password):
@@ -170,12 +175,6 @@ class AccountsIntegrationTests(APITestCase):
     def test_login_inactive_user(self):
         url = "/api/login/"
         data = {"email": "inactive@test.de", "password": "Inactive123!"}
-        response = self.client.post(url, data, format="json")
-        self.assertEqual(response.status_code, 400)
-
-    def test_login_soft_deleted_user(self):
-        url = "/api/login/"
-        data = {"email": "deleted@test.de", "password": "Deleted123!"}
         response = self.client.post(url, data, format="json")
         self.assertEqual(response.status_code, 400)
 
@@ -322,48 +321,22 @@ class AccountsIntegrationTests(APITestCase):
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 400)
 
-    # --- SOFT DELETE ---
-    def test_soft_delete_success(self):
-        self.authenticate_with_cookies("user@test.de", "User123!")
-        url = "/api/delete-account/"
-        data = {"confirm": True}
-        response = self.client.delete(url, data)
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertTrue(self.user.is_soft_deleted)
-        self.assertFalse(self.user.is_active)
-
-    def test_soft_delete_no_auth(self):
-        url = "/api/delete-account/"
-        data = {"confirm": True}
-        response = self.client.delete(url, data)
-        self.assertEqual(response.status_code, 401)
-
-    def test_soft_delete_no_confirm(self):
-        self.authenticate_with_cookies("user@test.de", "User123!")
-        url = "/api/delete-account/"
-        data = {}
-        response = self.client.delete(url, data)
-        self.assertEqual(response.status_code, 400)
-        self.user.refresh_from_db()
-        self.assertFalse(self.user.is_soft_deleted)
-
     # --- HARD DELETE (ADMIN) ---
     def test_hard_delete_success(self):
         self.authenticate_with_cookies("admin@test.de", "Admin123!")
-        url = f"/api/admin/delete-account/{self.deleted_user.pk}/"
+        url = f"/api/admin/delete-account/{self.target_user.pk}/"
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 204)
-        self.assertFalse(CustomUser.objects.filter(pk=self.deleted_user.pk).exists())
+        self.assertFalse(CustomUser.objects.filter(pk=self.target_user.pk).exists())
 
     def test_hard_delete_not_admin(self):
         self.authenticate_with_cookies("user@test.de", "User123!")
-        url = f"/api/admin/delete-account/{self.deleted_user.pk}/"
+        url = f"/api/admin/delete-account/{self.target_user.pk}/"
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 403)
 
     def test_hard_delete_no_auth(self):
-        url = f"/api/admin/delete-account/{self.deleted_user.pk}/"
+        url = f"/api/admin/delete-account/{self.target_user.pk}/"
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 401)
 
@@ -373,27 +346,421 @@ class AccountsIntegrationTests(APITestCase):
         response = self.client.delete(url)
         self.assertEqual(response.status_code, 404)
 
-    # --- RESTORE ACCOUNT (ADMIN) ---
-    def test_restore_account_success(self):
+    def test_restore_route_is_gone(self):
         self.authenticate_with_cookies("admin@test.de", "Admin123!")
-        url = f"/api/admin/restore-account/{self.deleted_user.pk}/"
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, 200)
-        self.deleted_user.refresh_from_db()
-        self.assertFalse(self.deleted_user.is_soft_deleted)
-        self.assertTrue(self.deleted_user.is_active)
-
-    def test_restore_account_not_admin(self):
-        self.authenticate_with_cookies("user@test.de", "User123!")
-        url = f"/api/admin/restore-account/{self.deleted_user.pk}/"
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, 403)
-
-    def test_restore_account_invalid_user(self):
-        self.authenticate_with_cookies("admin@test.de", "Admin123!")
-        url = f"/api/admin/restore-account/99999/"
-        response = self.client.post(url)
+        response = self.client.post(f"/api/admin/restore-account/{self.target_user.pk}/")
         self.assertEqual(response.status_code, 404)
+
+
+class DeleteOwnAccountTests(APITestCase):
+    """
+    DELETE /api/delete-account/ deletes at once and for good, as the privacy policy promises
+    (X5 finding 6, decision F2): rows and files go, and no way brings the account back.
+    """
+
+    url = "/api/delete-account/"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        run_mail_jobs_inline(self)
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        media_settings = override_settings(MEDIA_ROOT=self.media)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+        queue = patch("video_app.api.signals.django_rq.get_queue")
+        queue.start()
+        self.addCleanup(queue.stop)
+        self.user = CustomUser.objects.create_user(
+            username="user", email="user@test.de", password="User123!", is_active=True
+        )
+        response = self.client.post(
+            "/api/login/", {"email": "user@test.de", "password": "User123!"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.old_access = response.cookies["access_token"].value
+        self.old_refresh = response.cookies["refresh_token"].value
+
+    def _write(self, relative_path):
+        path = os.path.join(self.media, relative_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"data")
+        return relative_path
+
+    def _delete(self):
+        response = self.client.delete(self.url, {"confirm": True}, format="json")
+        self.assertEqual(response.status_code, 204)
+        return response
+
+    def test_rows_and_files_are_gone(self):
+        video = Video.objects.create(
+            title="Mine", description="d", category="Comedy", owner=self.user,
+            video_file=self._write("videos/mine.mp4"),
+            thumbnail_url=self._write("thumbnails/mine.jpg"),
+        )
+        VideoResolution.objects.create(
+            original_video=video, resolution="480p",
+            converted_file=self._write(f"hls/{video.pk}/480p/index.m3u8"),
+        )
+        VideoProgress.objects.create(user=self.user, video=video, progress_seconds=5)
+        self._delete()
+        self.assertFalse(CustomUser.objects.filter(pk=self.user.pk).exists())
+        self.assertFalse(Video.objects.filter(pk=video.pk).exists())
+        self.assertFalse(VideoResolution.objects.exists())
+        self.assertFalse(VideoProgress.objects.exists())
+        for folder in ["videos", "thumbnails", "hls"]:
+            with self.subTest(folder=folder):
+                folder_path = os.path.join(self.media, folder)
+                self.assertEqual(os.listdir(folder_path) if os.path.isdir(folder_path) else [], [])
+
+    def test_other_accounts_keep_their_videos(self):
+        other = CustomUser.objects.create_user(
+            username="other", email="other@test.de", password="Other123!", is_active=True
+        )
+        path = self._write("videos/other.mp4")
+        video = Video.objects.create(
+            title="Theirs", description="d", category="Comedy", owner=other, video_file=path
+        )
+        self._delete()
+        self.assertTrue(Video.objects.filter(pk=video.pk).exists())
+        self.assertTrue(os.path.exists(os.path.join(self.media, path)))
+
+    def test_auth_cookies_are_cleared(self):
+        response = self._delete()
+        for name in ["access_token", "refresh_token"]:
+            with self.subTest(cookie=name):
+                self.assertEqual(response.cookies[name].value, "")
+                self.assertEqual(response.cookies[name]["max-age"], 0)
+
+    def test_old_tokens_stop_working(self):
+        self._delete()
+        # The old soft delete also answered 401 here (inactive account), so the row must be gone.
+        self.assertFalse(CustomUser.objects.filter(pk=self.user.pk).exists())
+        client = APIClient()
+        client.cookies["refresh_token"] = self.old_refresh
+        self.assertEqual(client.post("/api/token/refresh/").status_code, 401)
+        client = APIClient()
+        client.cookies["access_token"] = self.old_access
+        self.assertEqual(client.get("/api/me/").status_code, 401)
+
+    def test_old_activation_link_does_not_revive_the_account(self):
+        self.user.activation_code = "oldcode"
+        self.user.activation_code_expiry = timezone.now() + timedelta(hours=1)
+        self.user.save()
+        uid = base64.urlsafe_b64encode(str(self.user.pk).encode()).decode()
+        self._delete()
+        response = APIClient().get(f"/api/activate/{uid}/oldcode/")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(CustomUser.objects.filter(email="user@test.de").exists())
+
+    def test_new_link_and_reset_requests_send_nothing(self):
+        self._delete()
+        for url in ["/api/request-new-activation-link/", "/api/password_reset/"]:
+            with self.subTest(url=url):
+                response = APIClient().post(url, {"email": "user@test.de"}, format="json")
+                self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(CustomUser.objects.filter(email="user@test.de").exists())
+
+    def test_address_is_free_again(self):
+        self._delete()
+        response = APIClient().post(
+            "/api/register/",
+            {"email": "user@test.de", "password": "NeuUser123!", "confirmed_password": "NeuUser123!"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(CustomUser.objects.get(email="user@test.de").is_active)
+
+    def test_without_confirmation_nothing_happens(self):
+        response = self.client.delete(self.url, {}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "Please confirm account deletion.")
+        self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
+
+    def test_only_the_json_boolean_true_confirms(self):
+        for value in ["false", "true", "no", 1, 0, None, []]:
+            with self.subTest(json=value):
+                response = self.client.delete(self.url, {"confirm": value}, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.data["detail"], "Please confirm account deletion.")
+                self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
+        for body in ["confirm=false", "confirm=true", "confirm=1"]:
+            with self.subTest(form=body):
+                response = self.client.delete(
+                    self.url, body, content_type="application/x-www-form-urlencoded"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
+
+    def test_without_login_nothing_happens(self):
+        response = APIClient().delete(self.url, {"confirm": True}, format="json")
+        self.assertEqual(response.status_code, 401)
+        self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
+
+    def test_swagger_describes_the_real_behaviour(self):
+        response = self.client.get("/swagger/?format=openapi")
+        self.assertEqual(response.status_code, 200)
+        paths = response.json()["paths"]
+        self.assertIn("permanently", paths["/delete-account/"]["delete"]["description"])
+        self.assertNotIn("soft", str(paths["/delete-account/"]).lower())
+        self.assertFalse([path for path in paths if "restore" in path])
+
+
+@override_settings(
+    # Admin pages need static files; the manifest only exists after collectstatic (prod image).
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+)
+class SoftDeletedLeftoverTests(APITestCase):
+    """
+    Rows deleted by the old soft delete still have is_soft_deleted=True; the field stays for a
+    rollback and no migration removes them. They must stay dead on every way in (review I3).
+    """
+
+    password = "Gone123!x"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        run_mail_jobs_inline(self)
+
+    def _leftover(self, email="gone@test.de", is_active=True, **extra):
+        return CustomUser.objects.create_user(
+            username=email, email=email, password=self.password,
+            is_active=is_active, is_soft_deleted=True, **extra
+        )
+
+    def _uid(self, user):
+        return base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+
+    def _give_code(self, user):
+        user.activation_code = "leftovercode"
+        user.activation_code_expiry = timezone.now() + timedelta(hours=1)
+        user.save()
+
+    def test_login_is_rejected(self):
+        for is_active in [True, False]:
+            email = f"gone-{str(is_active).lower()}@test.de"
+            self._leftover(email=email, is_active=is_active)
+            for spelling in [email, email.upper()]:
+                with self.subTest(is_active=is_active, email=spelling):
+                    response = self.client.post(
+                        "/api/login/", {"email": spelling, "password": self.password}, format="json"
+                    )
+                    self.assertEqual(response.status_code, 400)
+                    self.assertNotIn("access_token", response.cookies)
+
+    def test_activation_link_does_not_revive_the_row(self):
+        user = self._leftover(is_active=False)
+        self._give_code(user)
+        response = self.client.get(f"/api/activate/{self._uid(user)}/leftovercode/")
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+
+    def test_new_activation_link_stays_neutral_and_sends_nothing(self):
+        user = self._leftover(is_active=False)
+        url = "/api/request-new-activation-link/"
+        response = self.client.post(url, {"email": user.email}, format="json")
+        unknown = self.client.post(url, {"email": "nobody@test.de"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, unknown.data)
+        self.assertEqual(len(mail.outbox), 0)
+        user.refresh_from_db()
+        self.assertIsNone(user.activation_code)
+
+    def test_password_reset_request_sends_nothing(self):
+        user = self._leftover()
+        response = self.client.post("/api/password_reset/", {"email": user.email}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+        user.refresh_from_db()
+        self.assertIsNone(user.activation_code)
+
+    def test_password_reset_confirm_is_rejected(self):
+        user = self._leftover()
+        self._give_code(user)
+        response = self.client.post(
+            f"/api/password_confirm/{self._uid(user)}/leftovercode/",
+            {"new_password": "NewPw123!x", "confirm_password": "NewPw123!x"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(self.password))
+
+    def test_refresh_token_gets_no_access_token(self):
+        user = self._leftover()
+        self.client.cookies["refresh_token"] = str(RefreshToken.for_user(user))
+        response = self.client.post("/api/token/refresh/")
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("access_token", response.cookies)
+
+    def test_existing_access_token_is_rejected(self):
+        token = str(AccessToken.for_user(self._leftover()))
+        cookie_client = APIClient()
+        cookie_client.cookies["access_token"] = token
+        header_client = APIClient()
+        header_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        for name, client in [("cookie", cookie_client), ("header", header_client)]:
+            with self.subTest(way=name):
+                self.assertEqual(client.get("/api/me/").status_code, 401)
+
+    def test_django_admin_login_is_rejected(self):
+        self._leftover(email="root@test.de", is_staff=True, is_superuser=True)
+        response = self.client.post(
+            "/admin/login/", {"username": "root@test.de", "password": self.password}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+
+class EmailCaseTests(APITestCase):
+    """
+    The case of an address must neither lock anyone out nor create a second account (X4 finding 2).
+
+    New addresses are stored lower-case. Older rows keep their spelling, and two of them may
+    differ only by case: the exact spelling wins, then the oldest row.
+    """
+
+    password = "Secret123!"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        run_mail_jobs_inline(self)
+
+    def _register(self, email):
+        return self.client.post(
+            "/api/register/",
+            {"email": email, "password": self.password, "confirmed_password": self.password},
+        )
+
+    def _user(self, email, password=None, is_active=True):
+        return CustomUser.objects.create_user(
+            username=email, email=email, password=password or self.password, is_active=is_active
+        )
+
+    def _login(self, email, password=None):
+        return self.client.post(
+            "/api/login/", {"email": email, "password": password or self.password}, format="json"
+        )
+
+    def _me(self):
+        return self.client.get("/api/me/").data["email"]
+
+    def _expire_link(self, user):
+        CustomUser.objects.filter(pk=user.pk).update(
+            activation_code_expiry=timezone.now() - timedelta(hours=1)
+        )
+
+    # --- REGISTRATION ---
+    def test_registration_stores_the_address_lower_case(self):
+        self.assertEqual(self._register("Max.Muster@Example.COM").status_code, 201)
+        self.assertEqual(CustomUser.objects.get().email, "max.muster@example.com")
+
+    def test_second_registration_in_any_case_is_rejected(self):
+        self._register("Max.Muster@Example.COM")
+        for email in ["Max.Muster@Example.COM", "max.muster@example.com", "MAX.MUSTER@EXAMPLE.COM"]:
+            with self.subTest(email=email):
+                response = self._register(email)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("email", response.data)
+        self.assertEqual(CustomUser.objects.count(), 1)
+
+    def test_registration_is_rejected_when_an_older_row_differs_by_case(self):
+        self._user("Old.Row@example.com")
+        for email in ["old.row@example.com", "OLD.ROW@EXAMPLE.COM", "Old.Row@example.com"]:
+            with self.subTest(email=email):
+                self.assertEqual(self._register(email).status_code, 400)
+        self.assertEqual(CustomUser.objects.count(), 1)
+
+    # --- LOGIN ---
+    def test_login_works_with_the_spelling_used_at_registration(self):
+        self._register("Max.Muster@Example.COM")
+        CustomUser.objects.update(is_active=True)
+        response = self._login("Max.Muster@Example.COM")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access_token", response.cookies)
+
+    def test_login_finds_an_older_row_in_any_case(self):
+        self._user("Old.Row@example.com")
+        for email in ["old.row@example.com", "OLD.ROW@EXAMPLE.COM", "Old.Row@example.com"]:
+            with self.subTest(email=email):
+                cache.clear()
+                self.assertEqual(self._login(email).status_code, 200)
+
+    def test_login_with_the_wrong_password_stays_rejected(self):
+        self._user("user@example.com")
+        self.assertEqual(self._login("USER@example.com", password="wrong").status_code, 400)
+
+    def test_login_with_two_rows_prefers_the_exact_spelling(self):
+        self._user("Twin@example.com", password="First123!")
+        self._user("twin@example.com", password="Second123!")
+        self.assertEqual(self._login("twin@example.com", password="Second123!").status_code, 200)
+        self.assertEqual(self._me(), "twin@example.com")
+
+    def test_login_with_two_rows_and_another_spelling_takes_the_oldest(self):
+        self._user("Twin@example.com", password="First123!")
+        self._user("twin@example.com", password="Second123!")
+        self.assertEqual(self._login("TWIN@example.com", password="First123!").status_code, 200)
+        self.assertEqual(self._me(), "Twin@example.com")
+        self.assertEqual(self._login("TWIN@example.com", password="Second123!").status_code, 400)
+
+    # --- PASSWORD RESET ---
+    def test_reset_finds_the_account_in_any_case_and_mails_the_stored_address(self):
+        self._user("Old.Row@example.com")
+        response = self.client.post("/api/password_reset/", {"email": "OLD.ROW@EXAMPLE.COM"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["Old.Row@example.com"]])
+
+    def test_reset_with_two_rows_sends_one_mail(self):
+        self._user("Twin@example.com")
+        self._user("twin@example.com")
+        response = self.client.post("/api/password_reset/", {"email": "TWIN@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["Twin@example.com"]])
+
+    def test_reset_skips_an_inactive_row(self):
+        self._user("Twin@example.com", is_active=False)
+        self._user("twin@example.com")
+        self.client.post("/api/password_reset/", {"email": "TWIN@example.com"})
+        self.assertEqual([m.to for m in mail.outbox], [["twin@example.com"]])
+
+    # --- NEW ACTIVATION LINK ---
+    def test_new_link_finds_the_account_in_any_case(self):
+        self._user("Old.Row@example.com", is_active=False)
+        response = self.client.post("/api/request-new-activation-link/", {"email": "OLD.ROW@EXAMPLE.COM"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["Old.Row@example.com"]])
+
+    def test_new_link_with_two_rows_sends_one_mail(self):
+        self._user("Twin@example.com", is_active=False)
+        self._user("twin@example.com", is_active=False)
+        response = self.client.post("/api/request-new-activation-link/", {"email": "twin@example.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([m.to for m in mail.outbox], [["twin@example.com"]])
+
+    def test_new_link_keeps_a_link_that_is_still_valid(self):
+        self._register("user@example.com")
+        mail.outbox.clear()
+        self.client.post("/api/request-new-activation-link/", {"email": "USER@example.com"})
+        self.assertEqual(mail.outbox, [])
+        self._expire_link(CustomUser.objects.get())
+        self.client.post("/api/request-new-activation-link/", {"email": "USER@example.com"})
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_new_link_without_a_usable_address_stays_neutral(self):
+        for data in [{}, {"email": ["user@example.com"]}, {"email": 5}]:
+            with self.subTest(data=data):
+                cache.clear()
+                response = self.client.post("/api/request-new-activation-link/", data, format="json")
+                self.assertEqual(response.status_code, 200)
+        self.assertEqual(mail.outbox, [])
 
 
 class MailWorkerTests(APITestCase):
@@ -587,8 +954,7 @@ class CookieAndCsrfTests(APITestCase):
         self._login()
         response = self._delete_own_account()
         self.assertEqual(response.status_code, 403)
-        self.user.refresh_from_db()
-        self.assertFalse(self.user.is_soft_deleted)
+        self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
 
     def test_cookie_request_with_csrf_token_is_accepted(self):
         token = self._login().cookies["csrftoken"].value
@@ -657,6 +1023,87 @@ class ThrottlingTests(APITestCase):
         for url, data in requests:
             with self.subTest(url=url):
                 self.assertEqual(self.client.post(url, data, format="json").status_code, 429)
+
+
+@override_settings(
+    # Admin pages need static files; the manifest only exists after collectstatic (prod image).
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+)
+class AdminLoginThrottlingTests(APITestCase):
+    """
+    The Django admin login, also used by the RQ dashboard, has the same limit as the API login
+    (X5 finding 3): 5 POST per minute per IP, with one counter for both.
+    """
+
+    url = "/admin/login/"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def _login(self, password="wrong", **extra):
+        return self.client.post(self.url, {"username": "root@test.de", "password": password}, **extra)
+
+    def test_login_is_limited_per_ip(self):
+        for _ in range(5):
+            self.assertEqual(self._login().status_code, 200)
+        response = self._login()
+        self.assertEqual(response.status_code, 429)
+        self.assertTrue(response["Retry-After"])
+
+    def test_limit_is_per_ip(self):
+        for _ in range(5):
+            self._login(REMOTE_ADDR="10.0.0.1")
+        self.assertEqual(self._login(REMOTE_ADDR="10.0.0.2").status_code, 200)
+
+    def test_spoofed_forwarded_for_does_not_bypass_limit(self):
+        for i in range(5):
+            self._login(HTTP_X_FORWARDED_FOR=f"203.0.113.{i}")
+        self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.99").status_code, 429)
+
+    def test_behind_one_proxy_the_forwarded_client_ip_counts(self):
+        with override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}):
+            for _ in range(5):
+                self._login(HTTP_X_FORWARDED_FOR="203.0.113.1")
+            self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.1").status_code, 429)
+            self.assertEqual(self._login(HTTP_X_FORWARDED_FOR="203.0.113.2").status_code, 200)
+
+    def test_over_the_limit_no_password_is_checked(self):
+        with patch("django.contrib.auth.forms.authenticate", return_value=None) as authenticate:
+            for _ in range(5):
+                self._login()
+            self.assertEqual(authenticate.call_count, 5)
+            self.assertEqual(self._login().status_code, 429)
+            self.assertEqual(authenticate.call_count, 5)
+
+    def test_more_history_than_the_rate_still_answers_429(self):
+        # Right after lowering THROTTLE_RATE_LOGIN the counter can hold more entries than allowed;
+        # then the throttle knows no wait time and returns None.
+        key = AdminLoginThrottle.cache_format % {"scope": "login", "ident": "127.0.0.1"}
+        cache.set(key, [time.time()] * 10, 60)
+        response = self._login()
+        self.assertEqual(response.status_code, 429)
+        self.assertFalse(response.has_header("Retry-After"))
+
+    def test_get_stays_free(self):
+        for _ in range(6):
+            self._login()
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_api_login_and_admin_login_share_one_counter(self):
+        for _ in range(5):
+            self.client.post(
+                "/api/login/", {"email": "nobody@test.de", "password": "wrong"}, format="json"
+            )
+        self.assertEqual(self._login().status_code, 429)
+
+    def test_staff_can_still_log_in(self):
+        CustomUser.objects.create_superuser(username="root", email="root@test.de", password="Root123!")
+        response = self._login(password="Root123!")
+        self.assertEqual(response.status_code, 302)
 
 
 class DemoAccountTests(APITestCase):

@@ -22,11 +22,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         extra_kwargs = {"password": {"write_only": True}}
 
     def validate_email(self, value):
-        if CustomUser.objects.filter(email=value).exists():
+        if CustomUser.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError(
                 "Please check your entries and try again."
             )
-        return value
+        return value.lower()
 
     def validate(self, data):
         if data["password"] != data["confirmed_password"]:
@@ -67,7 +67,7 @@ class CustomLoginCookieSerializer(TokenObtainPairSerializer):
             password=password,
         )
 
-        if not user or not user.is_active or getattr(user, "is_soft_deleted", False):
+        if not user or not user.is_active:
             raise serializers.ValidationError(
                 "Please check your entries and try again."
             )

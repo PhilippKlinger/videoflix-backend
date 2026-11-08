@@ -17,6 +17,7 @@ from .utils import (
     is_valid_video_extension,
     MAX_VIDEO_DURATION_SECONDS,
     STANDARD_VIDEOS_CACHE_KEY,
+    UPLOAD_CONVERSION_TIMEOUT_SECONDS,
     get_ffmpeg_thumbnail_command,
     THUMBNAIL_SEEK_FALLBACK,
 )
@@ -93,7 +94,7 @@ def _run_thumbnail_attempt(command, output_path):
     An attempt succeeds only if ffmpeg exits 0 and leaves a non-empty file; some builds exit 0 without output.
     """
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         logger.info("ffmpeg exited with code %s while creating a thumbnail.", e.returncode)
         return False
@@ -160,6 +161,9 @@ def _convert_to_all_resolutions(video_instance, input_file, base_name, output_ba
             total_resolutions,
         )
         all_converted = all_converted and converted
+        # An upload that failed once does not hold the single worker any longer.
+        if not converted and video_instance.owner_id:
+            break
     return all_converted
 
 
@@ -177,13 +181,17 @@ def _run_hls_command(
     Run ffmpeg to create HLS for a resolution, update DB and cache.
     Return True on success.
     """
-    # Uploads are capped at the allowed length; catalog videos (no owner) are not.
+    # Uploads are capped at the allowed length and time; catalog videos (no owner) are not.
     max_seconds = MAX_VIDEO_DURATION_SECONDS if video_instance.owner_id else None
+    timeout = UPLOAD_CONVERSION_TIMEOUT_SECONDS if video_instance.owner_id else None
     command, playlist_path = get_ffmpeg_hls_command(
         default_storage.path(input_file.name), out_dir, base_name, res_height, max_seconds
     )
     try:
-        subprocess.run(command, check=True)
+        # ffmpeg prints file names and metadata (titles, GPS); logs carry IDs only (VFX-31).
+        subprocess.run(
+            command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout
+        )
         rel_playlist_path = os.path.relpath(
             os.path.join(out_dir, "index.m3u8"), settings.MEDIA_ROOT
         )
@@ -197,9 +205,15 @@ def _run_hls_command(
         )
         update_video_cache()
         return True
+    except subprocess.CalledProcessError as e:
+        logger.error(
+            "ffmpeg exited with code %s while converting video %s to %s.",
+            e.returncode, video_instance.pk, res_label,
+        )
     except Exception as e:
-        set_video_failed(video_instance)
-        return False
+        logger.error("Error converting video %s to %s: %s", video_instance.pk, res_label, type(e).__name__)
+    set_video_failed(video_instance)
+    return False
 
 
 def set_video_failed(video_instance):

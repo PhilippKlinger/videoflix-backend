@@ -472,7 +472,23 @@ class DeleteOwnAccountTests(APITestCase):
     def test_without_confirmation_nothing_happens(self):
         response = self.client.delete(self.url, {}, format="json")
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "Please confirm account deletion.")
         self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
+
+    def test_only_the_json_boolean_true_confirms(self):
+        for value in ["false", "true", "no", 1, 0, None, []]:
+            with self.subTest(json=value):
+                response = self.client.delete(self.url, {"confirm": value}, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.data["detail"], "Please confirm account deletion.")
+                self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
+        for body in ["confirm=false", "confirm=true", "confirm=1"]:
+            with self.subTest(form=body):
+                response = self.client.delete(
+                    self.url, body, content_type="application/x-www-form-urlencoded"
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertTrue(CustomUser.objects.filter(pk=self.user.pk).exists())
 
     def test_without_login_nothing_happens(self):
         response = APIClient().delete(self.url, {"confirm": True}, format="json")

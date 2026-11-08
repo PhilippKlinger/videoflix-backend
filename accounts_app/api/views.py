@@ -307,14 +307,15 @@ class PasswordResetConfirmView(views.APIView):
 class DeleteAccountView(views.APIView):
     """
     Immediately and permanently delete the authenticated user's account with all uploads and
-    their files. This cannot be undone. Requires "confirm": true and clears the auth cookies.
+    their files. This cannot be undone. Requires a JSON body with the boolean "confirm": true
+    (a string such as "true" or a form value does not count) and clears the auth cookies.
     """
 
     permission_classes = [IsAuthenticated]
 
     def delete(self, request):
-        confirm = request.data.get("confirm", False)
-        if not confirm:
+        # Only the JSON boolean counts; a text like "false" is truthy and would delete for good.
+        if request.data.get("confirm") is not True:
             return Response(
                 {"detail": "Please confirm account deletion."},
                 status=status.HTTP_400_BAD_REQUEST,

@@ -436,6 +436,8 @@ class DeleteOwnAccountTests(APITestCase):
 
     def test_old_tokens_stop_working(self):
         self._delete()
+        # The old soft delete also answered 401 here (inactive account), so the row must be gone.
+        self.assertFalse(CustomUser.objects.filter(pk=self.user.pk).exists())
         client = APIClient()
         client.cookies["refresh_token"] = self.old_refresh
         self.assertEqual(client.post("/api/token/refresh/").status_code, 401)

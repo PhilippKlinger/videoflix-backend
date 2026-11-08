@@ -2,6 +2,7 @@ import base64
 import os
 import shutil
 import tempfile
+import time
 from datetime import timedelta
 from io import StringIO
 from unittest.mock import patch
@@ -20,6 +21,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase
 from accounts_app.api.tasks import deliver_activation_email, deliver_password_reset_email
 from accounts_app.api.utils import is_admin
+from core.admin_login import AdminLoginThrottle
 from video_app.models import Video, VideoProgress, VideoResolution
 
 
@@ -1074,6 +1076,15 @@ class AdminLoginThrottlingTests(APITestCase):
             self.assertEqual(authenticate.call_count, 5)
             self.assertEqual(self._login().status_code, 429)
             self.assertEqual(authenticate.call_count, 5)
+
+    def test_more_history_than_the_rate_still_answers_429(self):
+        # Right after lowering THROTTLE_RATE_LOGIN the counter can hold more entries than allowed;
+        # then the throttle knows no wait time and returns None.
+        key = AdminLoginThrottle.cache_format % {"scope": "login", "ident": "127.0.0.1"}
+        cache.set(key, [time.time()] * 10, 60)
+        response = self._login()
+        self.assertEqual(response.status_code, 429)
+        self.assertFalse(response.has_header("Retry-After"))
 
     def test_get_stays_free(self):
         for _ in range(6):

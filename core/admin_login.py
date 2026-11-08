@@ -28,10 +28,14 @@ def throttled_admin_login(request, extra_context=None):
     if request.method == "POST":
         throttle = AdminLoginThrottle()
         if not throttle.allow_request(request, None):
-            return HttpResponse(
+            response = HttpResponse(
                 "Too many login attempts. Please try again later.",
                 status=429,
                 content_type="text/plain",
-                headers={"Retry-After": str(ceil(throttle.wait()))},
             )
+            # None if the counter holds more entries than the rate allows, e.g. right after lowering it.
+            wait = throttle.wait()
+            if wait is not None:
+                response["Retry-After"] = str(ceil(wait))
+            return response
     return admin.site.login(request, extra_context)

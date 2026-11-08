@@ -53,7 +53,7 @@ cd videoflix-backend
 
 # 2. Make a copy of the .env.template
 cp .env.dev.template .env -> local development
-cp .env.prod.template .env -> production server
+cp .env.prod.template .env -> local check of the production image
 
 # 3. Enter your secrets, db settings etc. Be sure to set the right port for CORS.
 http://127.0.0.1:5500/ -> Live Server

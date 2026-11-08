@@ -16,7 +16,11 @@ ALLOWED_UPLOAD_EXTENSIONS = ["mp4", "mov"]
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 MAX_VIDEO_DURATION_SECONDS = 120
 MAX_UPLOADS_PER_ACCOUNT = 2
-MAX_VIDEO_PIXELS = 8294400  # 3840 x 2160
+# 3840x2160 in either orientation.
+MAX_VIDEO_LONG_SIDE = 3840
+MAX_VIDEO_SHORT_SIDE = 2160
+# Decoders check -max_pixels with the width rounded up to 64, so a 2160 wide portrait frame needs 2176 x 3840.
+MAX_DECODE_PIXELS = 2176 * 3840
 MAX_VIDEO_FPS = 120
 # Per resolution, for uploads only: a small file with many frames must not block the single worker.
 UPLOAD_CONVERSION_TIMEOUT_SECONDS = 300
@@ -24,7 +28,7 @@ UPLOAD_CONVERSION_TIMEOUT_SECONDS = 300
 # Uploads are untrusted: a crafted file must not make ffmpeg or ffprobe open URLs.
 LOCAL_FILES_ONLY = ["-protocol_whitelist", "file"]
 # Nor may a small file claim many GB of memory with huge frames. An input option, so it goes before -i.
-PIXEL_LIMIT = ["-max_pixels", str(MAX_VIDEO_PIXELS)]
+PIXEL_LIMIT = ["-max_pixels", str(MAX_DECODE_PIXELS)]
 
 
 def get_base_name_and_extension(file_name):

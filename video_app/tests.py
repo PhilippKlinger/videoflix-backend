@@ -487,7 +487,8 @@ class VideoAppIntegrationTests(APITestCase):
         ]
         for cmd in commands:
             position = cmd.index("-max_pixels")
-            self.assertEqual(cmd[position + 1], "8294400")
+            # Decoders round the width up to 64: a 2160 wide portrait 4K frame needs 2176 x 3840.
+            self.assertEqual(cmd[position + 1], str(2176 * 3840))
             # An input option only works in front of the input.
             self.assertLess(position, cmd.index("input"))
 
@@ -1054,19 +1055,34 @@ class UploadValidationTests(APITestCase):
         self.assertIn("video_file", response.data)
 
     # --- FRAME SIZE ---
-    def test_video_of_exactly_the_pixel_limit_is_accepted(self):
-        for width, height in [(3840, 2160), (2160, 3840)]:
+    def test_video_up_to_4k_in_either_orientation_is_accepted(self):
+        for width, height in [(3840, 2160), (2160, 3840), (3840, 1000), (1000, 3840)]:
             with self.subTest(width=width, height=height):
                 Video.objects.filter(owner=self.member).delete()
                 self.mock_run.return_value = ffprobe_output(width=width, height=height)
                 self.assertEqual(self._upload().status_code, 201)
 
-    def test_video_over_the_pixel_limit_is_rejected(self):
-        self.mock_run.return_value = ffprobe_output(width=3841, height=2160)
-        response = self._upload()
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("resolution", str(response.data["video_file"]))
-        self.assertFalse(Video.objects.filter(title="Clip").exists())
+    def test_accepted_sizes_fit_the_decoder_limit(self):
+        # A real run failed on 2160x3840: the decoder checks -max_pixels with the width rounded up to 64.
+        cmd = utils.get_ffmpeg_hls_command("input", "output", "base", 480)[0]
+        decoder_limit = int(cmd[cmd.index("-max_pixels") + 1])
+        for width, height in [(3840, 2160), (2160, 3840)]:
+            with self.subTest(width=width, height=height):
+                aligned_width = -(-width // 64) * 64
+                self.assertLessEqual(aligned_width * height, decoder_limit)
+
+    def test_video_over_the_4k_box_is_rejected(self):
+        # 3600x2300 and 2304x3840 have fewer pixels than 4K but do not fit 3840x2160 in either orientation.
+        for width, height in [(3841, 2160), (2160, 3841), (3840, 2161), (3600, 2300), (2304, 3840), (4000, 2000)]:
+            with self.subTest(width=width, height=height):
+                self.mock_run.return_value = ffprobe_output(width=width, height=height)
+                response = self._upload()
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    response.data["video_file"],
+                    ["The video resolution must not be larger than 3840x2160 (or 2160x3840 in portrait)."],
+                )
+                self.assertFalse(Video.objects.filter(title="Clip").exists())
 
     def test_video_without_a_known_frame_size_is_rejected(self):
         # Over -max_pixels ffprobe exits 0 and reports a PNG-in-MOV stream as 0x0 (real run).

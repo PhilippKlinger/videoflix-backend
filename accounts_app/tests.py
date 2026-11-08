@@ -504,6 +504,117 @@ class DeleteOwnAccountTests(APITestCase):
         self.assertFalse([path for path in paths if "restore" in path])
 
 
+@override_settings(
+    # Admin pages need static files; the manifest only exists after collectstatic (prod image).
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+)
+class SoftDeletedLeftoverTests(APITestCase):
+    """
+    Rows deleted by the old soft delete still have is_soft_deleted=True; the field stays for a
+    rollback and no migration removes them. They must stay dead on every way in (review I3).
+    """
+
+    password = "Gone123!x"
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        run_mail_jobs_inline(self)
+
+    def _leftover(self, email="gone@test.de", is_active=True, **extra):
+        return CustomUser.objects.create_user(
+            username=email, email=email, password=self.password,
+            is_active=is_active, is_soft_deleted=True, **extra
+        )
+
+    def _uid(self, user):
+        return base64.urlsafe_b64encode(str(user.pk).encode()).decode()
+
+    def _give_code(self, user):
+        user.activation_code = "leftovercode"
+        user.activation_code_expiry = timezone.now() + timedelta(hours=1)
+        user.save()
+
+    def test_login_is_rejected(self):
+        for is_active in [True, False]:
+            email = f"gone-{str(is_active).lower()}@test.de"
+            self._leftover(email=email, is_active=is_active)
+            for spelling in [email, email.upper()]:
+                with self.subTest(is_active=is_active, email=spelling):
+                    response = self.client.post(
+                        "/api/login/", {"email": spelling, "password": self.password}, format="json"
+                    )
+                    self.assertEqual(response.status_code, 400)
+                    self.assertNotIn("access_token", response.cookies)
+
+    def test_activation_link_does_not_revive_the_row(self):
+        user = self._leftover(is_active=False)
+        self._give_code(user)
+        response = self.client.get(f"/api/activate/{self._uid(user)}/leftovercode/")
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+
+    def test_new_activation_link_stays_neutral_and_sends_nothing(self):
+        user = self._leftover(is_active=False)
+        url = "/api/request-new-activation-link/"
+        response = self.client.post(url, {"email": user.email}, format="json")
+        unknown = self.client.post(url, {"email": "nobody@test.de"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, unknown.data)
+        self.assertEqual(len(mail.outbox), 0)
+        user.refresh_from_db()
+        self.assertIsNone(user.activation_code)
+
+    def test_password_reset_request_sends_nothing(self):
+        user = self._leftover()
+        response = self.client.post("/api/password_reset/", {"email": user.email}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+        user.refresh_from_db()
+        self.assertIsNone(user.activation_code)
+
+    def test_password_reset_confirm_is_rejected(self):
+        user = self._leftover()
+        self._give_code(user)
+        response = self.client.post(
+            f"/api/password_confirm/{self._uid(user)}/leftovercode/",
+            {"new_password": "NewPw123!x", "confirm_password": "NewPw123!x"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(self.password))
+
+    def test_refresh_token_gets_no_access_token(self):
+        user = self._leftover()
+        self.client.cookies["refresh_token"] = str(RefreshToken.for_user(user))
+        response = self.client.post("/api/token/refresh/")
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("access_token", response.cookies)
+
+    def test_existing_access_token_is_rejected(self):
+        token = str(AccessToken.for_user(self._leftover()))
+        cookie_client = APIClient()
+        cookie_client.cookies["access_token"] = token
+        header_client = APIClient()
+        header_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        for name, client in [("cookie", cookie_client), ("header", header_client)]:
+            with self.subTest(way=name):
+                self.assertEqual(client.get("/api/me/").status_code, 401)
+
+    def test_django_admin_login_is_rejected(self):
+        self._leftover(email="root@test.de", is_staff=True, is_superuser=True)
+        response = self.client.post(
+            "/admin/login/", {"username": "root@test.de", "password": self.password}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+
 class EmailCaseTests(APITestCase):
     """
     The case of an address must neither lock anyone out nor create a second account (X4 finding 2).

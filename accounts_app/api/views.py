@@ -65,8 +65,9 @@ class ActivateAccountView(views.APIView):
     def get(self, request, uid, token):
         try:
             uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
+            # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
             user = CustomUser.objects.get(
-                pk=uid_decoded, activation_code=token, is_active=False
+                pk=uid_decoded, activation_code=token, is_active=False, is_soft_deleted=False
             )
             if (
                 not user.activation_code_expiry
@@ -185,7 +186,10 @@ class CustomLoginCookieRefreshView(views.APIView):
         try:
             refresh = RefreshToken(refresh_token)
             # The token stays valid after deactivation, so the account is checked here (VFX-53).
-            if not CustomUser.objects.filter(pk=refresh["user_id"], is_active=True).exists():
+            # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
+            if not CustomUser.objects.filter(
+                pk=refresh["user_id"], is_active=True, is_soft_deleted=False
+            ).exists():
                 return Response(
                     {"detail": "Invalid or expired refresh token."},
                     status=status.HTTP_401_UNAUTHORIZED,
@@ -275,8 +279,9 @@ class PasswordResetConfirmView(views.APIView):
     def post(self, request, uid, token):
         try:
             uid_decoded = base64.urlsafe_b64decode(uid.encode()).decode()
+            # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
             user = CustomUser.objects.get(
-                pk=uid_decoded, activation_code=token, is_active=True
+                pk=uid_decoded, activation_code=token, is_active=True, is_soft_deleted=False
             )
             if (
                 not user.activation_code_expiry

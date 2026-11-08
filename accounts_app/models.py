@@ -45,12 +45,21 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
 
+    def get_by_natural_key(self, username):
+        """
+        Lookup of ModelBackend for the API and the admin login.
+        """
+        # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
+        return self.get(**{self.model.USERNAME_FIELD: username, "is_soft_deleted": False})
+
     def find_by_email(self, email, **filters):
         """
         Find an account whatever the case of the address, or return None.
         Older rows can differ only by case: the exact spelling wins, then the oldest row.
+        Used for the login, a new activation link and the password reset.
         """
-        matches = self.filter(email__iexact=email, **filters)
+        # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
+        matches = self.filter(email__iexact=email, is_soft_deleted=False, **filters)
         return matches.filter(email=email).first() or matches.order_by("pk").first()
 
     def active_demos(self):
@@ -77,7 +86,7 @@ class CustomUser(AbstractUser):
         is_active: If the user is active.
         activation_code: Code for account activation and password reset.
         activation_code_expiry: Expiry datetime for the activation code.
-        is_soft_deleted: Unused, see the comment on the field.
+        is_soft_deleted: Rollback leftover, see the comment on the field.
         is_demo: Demo account started without mail; expires after DEMO_LIFETIME.
     """
     custom = models.CharField(max_length=500, blank=True, null=True)
@@ -86,7 +95,8 @@ class CustomUser(AbstractUser):
     is_active = models.BooleanField(default=False)
     activation_code = models.CharField(max_length=40, blank=True, null=True)
     activation_code_expiry = models.DateTimeField(blank=True, null=True)
-    # Unused; only kept so an older image can still run after a rollback. Removal follows after 1.0.
+    # Only kept so an older image can still run after a rollback. Removal follows after 1.0.
+    # Rows set to True by the old soft delete stay dead: every login, link, reset and token check skips them.
     is_soft_deleted = models.BooleanField(default=False)
     is_demo = models.BooleanField(default=False)
     

@@ -58,6 +58,9 @@ class CustomUserManager(BaseUserManager):
         Older rows can differ only by case: the exact spelling wins, then the oldest row.
         Used for the login, a new activation link and the password reset.
         """
+        # A JSON list or number would reach the database as is; Postgres has no UPPER() for it.
+        if not isinstance(email, str) or not email:
+            return None
         # Rollback leftover: rows of the old soft delete stay dead (see CustomUser.is_soft_deleted).
         matches = self.filter(email__iexact=email, is_soft_deleted=False, **filters)
         return matches.filter(email=email).first() or matches.order_by("pk").first()

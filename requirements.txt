@@ -9,7 +9,7 @@ django-redis==6.0.0
 django-rq==3.1
 djangorestframework==3.18.3
 djangorestframework_simplejwt==5.5.1
-drf-yasg==1.21.11
+drf-yasg==1.21.18
 gunicorn==23.0.0
 inflection==0.5.1
 packaging==25.0

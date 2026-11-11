@@ -10,7 +10,7 @@ django-rq==3.1
 djangorestframework==3.18.3
 djangorestframework_simplejwt==5.5.1
 drf-yasg==1.21.11
-gunicorn==23.0.0
+gunicorn==26.2.0
 inflection==0.5.1
 packaging==25.0
 pillow==13.0.0

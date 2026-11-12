@@ -55,9 +55,7 @@ cd videoflix-backend
 cp .env.dev.template .env -> local development
 cp .env.prod.template .env -> local check of the production image
 
-# 3. Enter your secrets, db settings etc. Be sure to set the right port for CORS.
-http://127.0.0.1:5500/ -> Live Server
-http://127.0.0.1:4200/ -> Angular
+# 3. Enter your secrets, db settings etc.
 
 # 4. Build and start all services (backend, Postgres, Redis)  
 docker compose --profile dev up -d --build -> local development

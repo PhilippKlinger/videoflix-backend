@@ -52,14 +52,14 @@ git clone git@github.com:PhilippKlinger/videoflix-backend.git
 cd videoflix-backend  
 
 # 2. Make a copy of the .env.template
-cp .env.dev.template .env -> local development
-cp .env.prod.template .env -> local check of the production image
+cp .env.dev.template .env  # local development
+cp .env.prod.template .env  # local check of the production image
 
 # 3. Enter your secrets, db settings etc.
 
 # 4. Build and start all services (backend, Postgres, Redis)  
-docker compose --profile dev up -d --build -> local development
-docker compose --profile prod up -d --build -> local check of the production image (production runs via the videoflix-deploy repository)
+docker compose --profile dev up -d --build  # local development
+docker compose --profile prod up -d --build  # local check of the production image (production runs via the videoflix-deploy repository)
 
 ```
 

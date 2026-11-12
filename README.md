@@ -61,13 +61,17 @@ cp .env.prod.template .env -> local check of the production image
 docker compose --profile dev up -d --build -> local development
 docker compose --profile prod up -d --build -> local check of the production image (production runs via the videoflix-deploy repository)
 
-🟢 The backend, database, Redis, and worker will be set up automatically.  
-🟢 Migrations run when `web` starts; static files are built into the image.  
-🟢 `web` (Gunicorn), `worker` (RQ, ffmpeg) and `mail-worker` (RQ, account mails) run as separate containers from the same image.
+```
 
+- The backend, database, Redis, and worker will be set up automatically.
+- Migrations run when `web` starts; static files are built into the image.
+- `web` (Gunicorn), `worker` (RQ, ffmpeg) and `mail-worker` (RQ, account mails) run as separate containers from the same image.
+
+```bash
 # 5. Create an admin account once (no default accounts in the image)
 docker compose --profile dev exec web python manage.py createsuperuser
 ```
+
 ---
 
 ## Local Development (advanced, optional)
@@ -95,13 +99,11 @@ Full details: See Swagger or Redoc docs below.
 
 ## API Documentation (Swagger & Redoc)
 
-After running `docker-compose up`, view docs at:
-```bash
-- **Swagger UI**
-http://127.0.0.1:8000/swagger/
-- **Redoc UI**
-http://127.0.0.1:8000/redoc/
-```
+After running `docker compose --profile dev up -d`, view docs at:
+
+- **Swagger UI**: http://127.0.0.1:8000/swagger/
+- **Redoc UI**: http://127.0.0.1:8000/redoc/
+
 You can:
 
 - See all endpoints, parameters, models, responses, and error codes.
@@ -111,32 +113,42 @@ You can:
 ---
 
 ## Development Tips
-```bash
+
 **Testing**  
 Run tests inside the running container:
 
-# Tests im Container (DEV-Profile):
+```bash
+# Tests in the container (dev profile):
 docker compose --profile dev exec web sh -lc "
   python -m coverage run manage.py test && coverage report
 "
+```
 
-# Logs:
+**Logs**
+
+```bash
 docker compose logs -f web worker mail-worker            # dev
 docker compose logs -f web-prod worker-prod mail-worker-prod  # prod
+```
 
-# Dependencies: requirements.txt (runtime, used by the prod image) and
-# requirements-dev.txt (test and debug tools, used by the dev profile).
-# Dependabot keeps the pins up to date; after a change rebuild the image:
+**Dependencies**  
+`requirements.txt` (runtime, used by the prod image) and `requirements-dev.txt` (test and debug tools, used by the dev profile). Dependabot keeps the pins up to date; after a change rebuild the image and run the checks:
+
+```bash
 docker compose --profile dev up -d --build
 docker compose --profile dev exec web sh -lc "
   python manage.py check &&
   python manage.py makemigrations --check --dry-run &&
   python -m coverage run manage.py test && coverage report
 "
+```
 
-# Production runs the published images via the videoflix-deploy repository.
-# Local check of the production image:
+**Production image**  
+Production runs the published images via the videoflix-deploy repository. Local check of the production image:
+
+```bash
 docker compose --profile prod up -d --build
+```
 
 **Media & Static files**  
 Uploaded videos are persisted in a Docker volume. Static files are built into the production image; only the dev profile keeps them in a volume.
@@ -146,7 +158,7 @@ Sensitive settings are loaded from `.env` (see `.env.dev.template` and `.env.pro
 
 **Admin UI**  
 Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) (with the account from `createsuperuser`, see step 5 of the Quickstart).
-```
+
 ---
 
 ## Example Workflow

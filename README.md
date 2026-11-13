@@ -3,34 +3,13 @@
 This is the backend REST API for **Videoflix**, a video streaming platform inspired by Netflix, built with Django, Django REST Framework, and Docker.
 
 [![CI](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/ci.yml)
+[![Security Checks](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/security.yml/badge.svg)](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/security.yml)
 [![CodeQL](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/codeql.yml/badge.svg)](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PhilippKlinger/videoflix-backend/badge)](https://scorecard.dev/viewer/?uri=github.com/PhilippKlinger/videoflix-backend)
+![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)
+![Django 5.2](https://img.shields.io/badge/django-5.2-darkgreen.svg)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live](https://img.shields.io/badge/live-videoflix.philipp--klinger.com-informational)](https://videoflix.philipp-klinger.com)
-
-From upload to playback: the API checks and stores the file, a worker converts it to HLS in the background, and the player streams it once the first resolution is ready.
-
-```mermaid
-sequenceDiagram
-    participant B as Browser (videoflix-frontend)
-    participant A as API (web)
-    participant Q as Redis queue
-    participant W as Worker (ffmpeg)
-    participant D as Postgres
-    B->>A: POST /api/upload/
-    A->>A: quota and ffprobe check
-    A->>D: save video (processing)
-    A->>Q: enqueue thumbnail and conversion
-    A-->>B: 201 Created
-    Q->>W: run jobs
-    W->>D: thumbnail, then HLS 480p, 720p, 1080p (ready after 480p)
-    loop while converting
-        B->>A: GET /api/conversion-progress/{id}/
-        A-->>B: progress and current resolution
-    end
-    B->>A: GET /api/video/{id}/{resolution}/index.m3u8 (cookie)
-    A-->>B: playlist and segments
-```
 
 ---
 
@@ -50,6 +29,25 @@ sequenceDiagram
 - **Modern Stack & Workflow**
   - Dockerized for easy setup
   - Redis for background tasks (video processing) and caching
+
+---
+
+## How it works
+
+From upload to playback: the API checks and stores the file, a worker converts it to HLS in the background, and the player streams it as soon as the first resolution is ready.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API
+    participant W as Worker (RQ, ffmpeg)
+    B->>A: upload video
+    A->>W: queue conversion
+    A-->>B: 201, processing
+    W->>W: convert to HLS 480p, 720p, 1080p
+    B->>A: play
+    A-->>B: stream as soon as 480p is ready
+```
 
 ---
 

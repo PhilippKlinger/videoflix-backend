@@ -11,26 +11,13 @@ This is the backend REST API for **Videoflix**, a video streaming platform inspi
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live](https://img.shields.io/badge/live-videoflix.philipp--klinger.com-informational)](https://videoflix.philipp-klinger.com)
 
----
-
 ## Overview
 
-- **User Registration & Authentication**
-  - Secure JWT-based login (cookies)
-  - Email activation & password reset via email
-- **Video Management**
-  - Authenticated video upload with automatic processing (thumbnail + HLS transcoding)
-  - Video streaming in multiple resolutions (HLS)
-- **Admin Features**
-  - Permanent account deletion
-  - Admin interface with import/export for data
-- **API Documentation**
-  - Interactive Swagger & Redoc docs (auto-generated from code)
-- **Modern Stack & Workflow**
-  - Dockerized for easy setup
-  - Redis for background tasks (video processing) and caching
-
----
+- Sign-up with email activation, JWT login in cookies, password reset and permanent account deletion
+- Video upload with quota and ffprobe checks, conversion to HLS in 480p, 720p and 1080p by a background worker
+- Streaming per resolution, playable as soon as 480p is ready
+- Django admin with import and export
+- API documentation generated from the code (Swagger, Redoc)
 
 ## How it works
 
@@ -49,167 +36,33 @@ sequenceDiagram
     A-->>B: stream as soon as 480p is ready
 ```
 
----
-
 ## Tech stack
 
-- **Python 3.13**
-- **Django 5**
-- **Django REST Framework**
-- **PostgreSQL**
-- **Redis**
-- **django-rq**
-- **ffmpeg**
-- **Swagger & Redoc**
+- Python 3.13, Django 5.2, Django REST Framework
+- PostgreSQL, Redis with django-rq for background jobs
+- ffmpeg for thumbnails and HLS
+- Gunicorn, Docker
+- drf-yasg for Swagger and Redoc
 
----
-
-## Getting Started
-
-### Prerequisites
-
-- [Docker](https://www.docker.com/) and [docker-compose](https://docs.docker.com/compose/) installed (recommended)
-- No manual Python or Postgres setup needed
-
-### Quickstart (Docker)
+## Getting started
 
 ```bash
-# 1. Clone the repository  
-git clone git@github.com:PhilippKlinger/videoflix-backend.git 
-cd videoflix-backend  
-
-# 2. Make a copy of the .env.template
-cp .env.dev.template .env  # local development
-cp .env.prod.template .env  # local check of the production image
-
-# 3. Enter your secrets, db settings etc.
-
-# 4. Build and start all services (backend, Postgres, Redis)  
-docker compose --profile dev up -d --build  # local development
-docker compose --profile prod up -d --build  # local check of the production image (production runs via the videoflix-deploy repository)
-
-```
-
-- The backend, database, Redis, and worker will be set up automatically.
-- Migrations run when `web` starts; static files are built into the image.
-- `web` (Gunicorn), `worker` (RQ, ffmpeg) and `mail-worker` (RQ, account mails) run as separate containers from the same image.
-
-```bash
-# 5. Create an admin account once (no default accounts in the image)
+cp .env.dev.template .env                       # local settings
+docker compose --profile dev up -d --build       # web, worker, Postgres, Redis
 docker compose --profile dev exec web python manage.py createsuperuser
+docker compose --profile dev exec web python manage.py test
 ```
 
----
+The API documentation is then at `http://127.0.0.1:8000/swagger/` and `/redoc/`.
 
-## API overview
+## CI and security
 
-All endpoints are prefixed with `/api/`.
-
-Example endpoints:
-
-- Registration: `POST /api/register/`
-- Login (JWT cookie): `POST /api/login/`
-- Video upload: `POST /api/upload/`
-- Video list: `GET /api/video/`
-- Stream video (HLS): `GET /api/video/<video_id>/<resolution>/<filename>`
-- Account actions: `/api/delete-account/`, `/api/password_reset/`, etc.
-
-Full details: See Swagger or Redoc docs below.
-
----
-
-## API documentation (Swagger & Redoc)
-
-After running `docker compose --profile dev up -d`, view docs at:
-
-- **Swagger UI**: http://127.0.0.1:8000/swagger/
-- **Redoc UI**: http://127.0.0.1:8000/redoc/
-
-You can:
-
-- See all endpoints, parameters, models, responses, and error codes.
-- Try out requests (register, login, upload videos) directly in the browser.
-- Test endpoints requiring authentication with the JWT cookies from `POST /api/login/`; the "Authorize" button only offers Basic auth, which this API does not accept.
-
----
-
-## Development tips
-
-**Testing**  
-Run tests inside the running container:
-
-```bash
-# Tests in the container (dev profile):
-docker compose --profile dev exec web sh -lc "
-  python -m coverage run manage.py test && coverage report
-"
-```
-
-**Logs**
-
-```bash
-docker compose logs -f web worker mail-worker            # dev
-docker compose logs -f web-prod worker-prod mail-worker-prod  # prod
-```
-
-**Dependencies**  
-`requirements.txt` (runtime, used by the prod image) and `requirements-dev.txt` (test and debug tools, used by the dev profile). Dependabot keeps the pins up to date; after a change rebuild the image and run the checks:
-
-```bash
-docker compose --profile dev up -d --build
-docker compose --profile dev exec web sh -lc "
-  python manage.py check &&
-  python manage.py makemigrations --check --dry-run &&
-  python -m coverage run manage.py test && coverage report
-"
-```
-
-**Production image**  
-Production runs the published images via the videoflix-deploy repository. Local check of the production image:
-
-```bash
-docker compose --profile prod up -d --build
-```
-
-**Media & Static files**  
-Uploaded videos are persisted in a Docker volume. Static files are built into the production image; only the dev profile keeps them in a volume.
-
-**Environment variables**  
-Sensitive settings are loaded from `.env` (see `.env.dev.template` and `.env.prod.template` for reference).
-
-**Admin UI**  
-Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) (with the account from `createsuperuser`, see step 5 of the Quickstart).
-
----
-
-## Testing and CI
-
-Every pull request to `main` runs these checks. Lint, tests, the security checks and CodeQL are required before a merge:
-
-- **Lint (ruff)** and **Test (Django)** against Postgres 18 and Redis 8, with `manage.py check`, a migration check and a coverage gate of 89 %
+- **Lint and tests:** ruff, Django tests against Postgres and Redis, migration check, coverage gate of 89 %
 - **Security checks:** secret scan (gitleaks), dependency review, `pip-audit`, workflow lint (zizmor)
 - **CodeQL** for Python and the workflows
-- **Build, scan and publish image:** Docker build and Trivy scan (reports fixable high findings, fails on fixable critical ones); on `main` the image is pushed to GHCR with SBOM and build provenance
+- **Image:** Trivy scan on every pull request; on `main` the image is published to GHCR with SBOM and build provenance
 
----
-
-## Deployment
-
-A merge to `main` publishes the image and starts the deploy in [videoflix-deploy](https://github.com/PhilippKlinger/videoflix-deploy), which runs it pinned by digest with a smoke test and automatic rollback.
-
----
-
-## Example workflow
-
-1. Register a new account (`/api/register/`)
-2. Activate via email link
-3. Login to receive authentication cookies
-4. Upload videos using `/api/upload/`
-5. View and stream videos via the `/api/video/` endpoints
-
----
-
----
+Lint, tests, security checks and CodeQL are required before a merge. A merge to `main` starts the deploy in [videoflix-deploy](https://github.com/PhilippKlinger/videoflix-deploy).
 
 ## Related repositories
 

@@ -11,6 +11,16 @@ This is the backend REST API for **Videoflix**, a video streaming platform inspi
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live](https://img.shields.io/badge/live-videoflix.philipp--klinger.com-informational)](https://videoflix.philipp-klinger.com)
 
+## Table of Contents
+
+- [Overview](#overview)
+- [How it works](#how-it-works)
+- [Tech stack](#tech-stack)
+- [Getting started](#getting-started)
+- [CI and security](#ci-and-security)
+- [Related repositories](#related-repositories)
+- [License](#license)
+
 ## Overview
 
 - Sign-up with email activation, JWT login in cookies, password reset and permanent account deletion

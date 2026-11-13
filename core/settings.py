@@ -266,7 +266,8 @@ SIMPLE_JWT = {
 SWAGGER_USE_COMPAT_RENDERERS = False
 
 # Docker checks health over plain HTTP inside the network; a redirect would fail it (VFX-31).
-SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
+# The admin is closed at the edge proxy and only reached through an SSH tunnel over plain HTTP.
+SECURE_REDIRECT_EXEMPT = [r"^api/health/$", r"^admin/", r"^static/"]
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

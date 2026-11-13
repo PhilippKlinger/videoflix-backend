@@ -1,11 +1,40 @@
 # Videoflix Backend
 
-This is the backend REST API for **Videoflix**, a video streaming platform inspired by Netflix, built with Django, Django REST Framework, and Docker.  
-Videoflix allows users to register, upload videos, stream in multiple resolutions (HLS), and manage their accounts securely.
+This is the backend REST API for **Videoflix**, a video streaming platform inspired by Netflix, built with Django, Django REST Framework, and Docker.
+
+[![CI](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/codeql.yml/badge.svg)](https://github.com/PhilippKlinger/videoflix-backend/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PhilippKlinger/videoflix-backend/badge)](https://scorecard.dev/viewer/?uri=github.com/PhilippKlinger/videoflix-backend)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Live](https://img.shields.io/badge/live-videoflix.philipp--klinger.com-informational)](https://videoflix.philipp-klinger.com)
+
+From upload to playback: the API checks and stores the file, a worker converts it to HLS in the background, and the player streams it once the first resolution is ready.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (videoflix-frontend)
+    participant A as API (web)
+    participant Q as Redis queue
+    participant W as Worker (ffmpeg)
+    participant D as Postgres
+    B->>A: POST /api/upload/
+    A->>A: quota and ffprobe check
+    A->>D: save video (processing)
+    A->>Q: enqueue thumbnail and conversion
+    A-->>B: 201 Created
+    Q->>W: run jobs
+    W->>D: thumbnail, then HLS 480p, 720p, 1080p (ready after 480p)
+    loop while converting
+        B->>A: GET /api/conversion-progress/{id}/
+        A-->>B: progress and current resolution
+    end
+    B->>A: GET /api/video/{id}/{resolution}/index.m3u8 (cookie)
+    A-->>B: playlist and segments
+```
 
 ---
 
-## Features
+## Overview
 
 - **User Registration & Authentication**
   - Secure JWT-based login (cookies)
@@ -24,7 +53,7 @@ Videoflix allows users to register, upload videos, stream in multiple resolution
 
 ---
 
-## Tech Stack
+## Tech stack
 
 - **Python 3.13**
 - **Django 5**
@@ -74,13 +103,7 @@ docker compose --profile dev exec web python manage.py createsuperuser
 
 ---
 
-## Local Development (advanced, optional)
-
-If you really want to run outside Docker, adjust your environment and DB settings accordingly.
-
----
-
-## API Overview
+## API overview
 
 All endpoints are prefixed with `/api/`.
 
@@ -97,7 +120,7 @@ Full details: See Swagger or Redoc docs below.
 
 ---
 
-## API Documentation (Swagger & Redoc)
+## API documentation (Swagger & Redoc)
 
 After running `docker compose --profile dev up -d`, view docs at:
 
@@ -112,7 +135,7 @@ You can:
 
 ---
 
-## Development Tips
+## Development tips
 
 **Testing**  
 Run tests inside the running container:
@@ -161,7 +184,24 @@ Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admi
 
 ---
 
-## Example Workflow
+## Testing and CI
+
+Every pull request to `main` runs these checks. Lint, tests, the security checks and CodeQL are required before a merge:
+
+- **Lint (ruff)** and **Test (Django)** against Postgres 18 and Redis 8, with `manage.py check`, a migration check and a coverage gate of 89 %
+- **Security checks:** secret scan (gitleaks), dependency review, `pip-audit`, workflow lint (zizmor)
+- **CodeQL** for Python and the workflows
+- **Build, scan and publish image:** Docker build and Trivy scan (reports fixable high findings, fails on fixable critical ones); on `main` the image is pushed to GHCR with SBOM and build provenance
+
+---
+
+## Deployment
+
+A merge to `main` publishes the image and starts the deploy in [videoflix-deploy](https://github.com/PhilippKlinger/videoflix-deploy), which runs it pinned by digest with a smoke test and automatic rollback.
+
+---
+
+## Example workflow
 
 1. Register a new account (`/api/register/`)
 2. Activate via email link
@@ -170,3 +210,17 @@ Access Django Admin at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admi
 5. View and stream videos via the `/api/video/` endpoints
 
 ---
+
+---
+
+## Related repositories
+
+| Repository | Role |
+|---|---|
+| [videoflix-frontend](https://github.com/PhilippKlinger/videoflix-frontend) | Angular app that uses this API |
+| [videoflix-deploy](https://github.com/PhilippKlinger/videoflix-deploy) | Production stack: images by digest, deploy with smoke test and rollback, backup and restore test |
+| [vps-edge](https://github.com/PhilippKlinger/vps-edge) | Reverse proxy with TLS in front of the stack |
+
+## License
+
+[MIT](LICENSE)

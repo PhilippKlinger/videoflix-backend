@@ -183,3 +183,20 @@ class VideoLogPrivacyTests(APITestCase):
         output = "\n".join(logs.output)
         self.assertIn(str(video.pk), output)
         self.assertNotIn("Private Holiday", output)
+
+
+class AdminTunnelTests(SimpleTestCase):
+    """
+    The admin is closed at the edge proxy and reached through an SSH tunnel over plain HTTP,
+    so Django must not redirect it (or its static files) to HTTPS; the API still is.
+    """
+
+    def test_admin_and_static_are_not_redirected_to_https(self):
+        with override_settings(SECURE_SSL_REDIRECT=True):
+            client = APIClient()
+            # Anonymous: the admin answers with its own login redirect, not with HTTPS
+            response = client.get("/admin/")
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response["Location"], "/admin/login/?next=/admin/")
+            self.assertNotEqual(client.get("/static/admin/css/base.css").status_code, 301)
+            self.assertEqual(client.get("/api/video/").status_code, 301)
